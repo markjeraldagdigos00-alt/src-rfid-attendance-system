@@ -13,9 +13,6 @@ app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 const PORT = process.env.PORT || 3000;
 
-// ADMIN PIN / PASSWORD (Baguhin kung kinakailangan)
-const ADMIN_PIN = process.env.ADMIN_PIN || "1234";
-
 // MONGOOSE DATABASE CONNECTION
 const MONGO_URI = process.env.MONGO_URI || 'mongodb+srv://srcadmin:30005BNHS@cluster0.he7jspr.mongodb.net/scholarhub_db?appName=Cluster0';
 
@@ -402,7 +399,7 @@ app.post('/api/clear-logs', async (req, res) => {
 });
 
 // -------------------------------------------------------------
-// 1. PUBLIC STUDENT REGISTRATION FORM ONLY ( /student-register )
+// 1. PUBLIC STUDENT REGISTRATION FORM (With Grade 7-12, Section & Position)
 // -------------------------------------------------------------
 app.get('/student-register', (req, res) => {
   res.send(`
@@ -413,13 +410,16 @@ app.get('/student-register', (req, res) => {
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
       <title>Student Self-Registration</title>
       <style>
-        body { font-family: 'Segoe UI', Arial, sans-serif; background: #f4f6f9; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
-        .card { background: white; padding: 30px; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); width: 100%; max-width: 400px; }
+        body { font-family: 'Segoe UI', Arial, sans-serif; background: #f4f6f9; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; padding: 20px 0; }
+        .card { background: white; padding: 30px; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); width: 100%; max-width: 420px; box-sizing: border-box; }
         h2 { text-align: center; color: #2c3e50; margin-bottom: 20px; }
         label { font-weight: bold; font-size: 14px; color: #34495e; }
-        input { width: 100%; padding: 10px; margin: 8px 0 16px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
-        button { width: 100%; background: #27ae60; color: white; padding: 12px; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; font-size: 16px; }
+        input, select { width: 100%; padding: 10px; margin: 6px 0 16px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
+        .row { display: flex; gap: 10px; }
+        .row > div { flex: 1; }
+        button { width: 100%; background: #27ae60; color: white; padding: 12px; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; font-size: 16px; margin-top: 10px; }
         button:hover { background: #219150; }
+        .hidden { display: none; }
       </style>
     </head>
     <body>
@@ -432,6 +432,42 @@ app.get('/student-register', (req, res) => {
           <label>Full Name:</label>
           <input type="text" name="name" placeholder="Juan Dela Cruz" required>
 
+          <div class="row">
+            <div>
+              <label>Grade Level:</label>
+              <select name="yearLevel" required>
+                <option value="Grade 7">Grade 7</option>
+                <option value="Grade 8">Grade 8</option>
+                <option value="Grade 9">Grade 9</option>
+                <option value="Grade 10">Grade 10</option>
+                <option value="Grade 11">Grade 11</option>
+                <option value="Grade 12">Grade 12</option>
+              </select>
+            </div>
+            <div>
+              <label>Section:</label>
+              <input type="text" name="section" placeholder="e.g. Diamond" required>
+            </div>
+          </div>
+
+          <label>Position / Role:</label>
+          <select name="position" id="studentPosSelect" onchange="checkCustomPos()" required>
+            <option value="Officer">Officer</option>
+            <option value="Member">Member</option>
+            <option value="President">President</option>
+            <option value="Vice President">Vice President</option>
+            <option value="Secretary">Secretary</option>
+            <option value="Treasurer">Treasurer</option>
+            <option value="Teacher / Faculty">Teacher / Faculty</option>
+            <option value="Guest">Guest</option>
+            <option value="Other">Custom Position...</option>
+          </select>
+
+          <div id="customPosBox" class="hidden">
+            <label>Specify Custom Position:</label>
+            <input type="text" name="customPosition" placeholder="Specify position">
+          </div>
+
           <label>Email Address:</label>
           <input type="email" name="email" placeholder="juan@gmail.com" required>
 
@@ -441,6 +477,18 @@ app.get('/student-register', (req, res) => {
           <button type="submit">Submit Registration</button>
         </form>
       </div>
+
+      <script>
+        function checkCustomPos() {
+          const val = document.getElementById('studentPosSelect').value;
+          const box = document.getElementById('customPosBox');
+          if (val === 'Other') {
+            box.classList.remove('hidden');
+          } else {
+            box.classList.add('hidden');
+          }
+        }
+      </script>
     </body>
     </html>
   `);
@@ -448,21 +496,31 @@ app.get('/student-register', (req, res) => {
 
 app.post('/api/register-student', async (req, res) => {
   try {
-    const { name, email, studentId, phone } = req.body;
+    const { name, email, studentId, phone, yearLevel, section, position, customPosition } = req.body;
+    let finalPosition = (position === 'Other' && customPosition) ? customPosition.trim() : position || 'Officer';
+
     const existing = await Student.findOne({ email });
     if (existing) {
       return res.send(`<div style="text-align:center; padding:50px; font-family:Arial;"><h2 style="color:#e74c3c;">May nakarehistro nang ganyang email!</h2><a href="/student-register">Bumalik sa Form</a></div>`);
     }
 
     const newStudent = new Student({
-      name, email, studentId, phone: phone || '', position: 'Officer', uid: ''
+      name,
+      email,
+      studentId,
+      phone: phone || '',
+      yearLevel: yearLevel || 'Grade 7',
+      section: section || 'A',
+      position: finalPosition,
+      uid: ''
     });
 
     await newStudent.save();
     res.send(`
       <div style="text-align:center; padding:50px; font-family:Arial;">
         <h2 style="color:#2ecc71;">Registration Successful!</h2>
-        <p>Salamat <strong>${name}</strong>! Naisumite na ang iyong impormasyon. I-a-assign ng Admin ang iyong RFID Card.</p>
+        <p>Salamat <strong>${name}</strong>! Naisumite na ang iyong impormasyon (${yearLevel} - ${section} | ${finalPosition}). I-a-assign ng Admin ang iyong RFID Card.</p>
+        <a href="/student-register" style="display:inline-block; margin-top:15px; text-decoration:none; color:#2980b9; font-weight:bold;">Mag-register ng iba pa</a>
       </div>
     `);
   } catch (err) {
@@ -471,7 +529,7 @@ app.post('/api/register-student', async (req, res) => {
 });
 
 // -------------------------------------------------------------
-// 2. PROTECTED ADMIN DASHBOARD ( / ) WITH PIN SECURITY
+// 2. DIRECT ADMIN DASHBOARD ( / )
 // -------------------------------------------------------------
 app.get('/', async (req, res) => {
   const config = await getConfig();
@@ -494,8 +552,6 @@ app.get('/', async (req, res) => {
     <title>${config.systemName || 'RFID Attendance System'}</title>
     <style>
       body { font-family: 'Segoe UI', Tahoma, sans-serif; margin: 20px; background: #f0f2f5; color: #333; }
-      #loginOverlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #2c3e50; display: flex; justify-content: center; align-items: center; z-index: 9999; }
-      .login-box { background: white; padding: 30px; border-radius: 8px; text-align: center; width: 320px; box-shadow: 0 4px 15px rgba(0,0,0,0.2); }
       .header-container { display: flex; align-items: center; gap: 15px; margin-bottom: 20px; }
       .header-logo { height: 65px; width: auto; object-fit: contain; border-radius: 6px; }
       h1, h2, h3 { color: #1a252f; margin: 0; }
@@ -516,25 +572,14 @@ app.get('/', async (req, res) => {
       .section-divider { border: 0; height: 1px; background: #e1e8ed; margin: 15px 0; }
       details.settings-card { background: white; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); padding: 15px 20px; }
       details.settings-card summary { font-size: 1.2em; font-weight: bold; color: #1a252f; cursor: pointer; }
-      .hidden-field, .hidden { display: none; }
+      .hidden-field { display: none; }
       .nav-links { margin-bottom: 15px; background: #e8f4f8; padding: 10px 15px; border-radius: 6px; }
       .nav-links a { font-weight: bold; color: #2980b9; text-decoration: none; }
     </style>
   </head>
   <body>
 
-    <!-- SECURITY PIN OVERLAY -->
-    <div id="loginOverlay">
-      <div class="login-box">
-        <h2>Admin Access</h2>
-        <p>I-enter ang Admin PIN Code:</p>
-        <input type="password" id="pinInput" placeholder="PIN Code (Default: 1234)" onkeypress="if(event.key==='Enter') checkPin()">
-        <button onclick="checkPin()" style="width:100%;">Enter Dashboard</button>
-        <p id="pinError" style="color:red; display:none; margin-top:10px; font-weight:bold;">Maling PIN Code!</p>
-      </div>
-    </div>
-
-    <div id="adminContent" class="hidden">
+    <div id="adminContent">
       <div class="header-container">
         ${logoHtml}
         <h1>${config.systemName || 'RFID Attendance System'}</h1>
@@ -662,8 +707,8 @@ app.get('/', async (req, res) => {
               </div>
             </div>
 
-            <div id="meetingFields" class="hidden-field">
-              <label><strong>Position / Role (For Meeting):</strong></label>
+            <div id="meetingFields">
+              <label><strong>Position / Role:</strong></label>
               <select id="positionSelect" name="position" onchange="checkCustomPosition()">
                 <option value="Officer" selected>Officer</option>
                 <option value="Member">Member</option>
@@ -729,7 +774,8 @@ app.get('/', async (req, res) => {
             <tr>
               <th>ID Number</th>
               <th>Name</th>
-              <th>Grade / Position</th>
+              <th>Grade / Section</th>
+              <th>Position</th>
               <th>Email / Phone</th>
               <th>Assigned Event</th>
               <th>Card UID</th>
@@ -743,32 +789,6 @@ app.get('/', async (req, res) => {
 
     <script>
       let registeredStudents = [];
-
-      function checkPin() {
-        const pin = document.getElementById('pinInput').value;
-        if (pin === "${ADMIN_PIN}") {
-          document.getElementById('loginOverlay').style.display = 'none';
-          document.getElementById('adminContent').classList.remove('hidden');
-          updateDashboard();
-          setInterval(updateDashboard, 2000);
-        } else {
-          document.getElementById('pinError').style.display = 'block';
-        }
-      }
-
-      function checkMeetingEvent() {
-        const eventVal = document.getElementById('eventSelect').value.toLowerCase();
-        const meetingFields = document.getElementById('meetingFields');
-        const studentFields = document.getElementById('studentFields');
-
-        if (eventVal.includes('meeting')) {
-          meetingFields.classList.remove('hidden-field');
-          studentFields.classList.add('hidden-field');
-        } else {
-          meetingFields.classList.add('hidden-field');
-          studentFields.classList.remove('hidden-field');
-        }
-      }
 
       function checkCustomPosition() {
         const posVal = document.getElementById('positionSelect').value;
@@ -794,8 +814,6 @@ app.get('/', async (req, res) => {
         if (student.assignedEvent) {
           document.getElementById('eventSelect').value = student.assignedEvent;
         }
-
-        checkMeetingEvent();
 
         if (student.yearLevel) document.getElementById('yearLevelSelect').value = student.yearLevel;
         if (student.section) document.getElementById('sectionInput').value = student.section;
@@ -824,7 +842,6 @@ app.get('/', async (req, res) => {
         document.getElementById('formTitle').innerText = 'Register / Edit Participant';
         document.getElementById('submitBtn').value = 'Save / Update Participant';
         document.getElementById('cancelEditBtn').classList.add('hidden-field');
-        checkMeetingEvent();
       }
 
       async function updateDashboard() {
@@ -840,9 +857,7 @@ app.get('/', async (req, res) => {
             tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;">No attendance records found.</td></tr>';
           } else {
             tbody.innerHTML = data.attendance.map(row => {
-              const detailInfo = (row.position && row.position !== 'N/A') 
-                ? \`<strong style="color: #2980b9;">[\${row.position}]</strong>\` 
-                : \`\${row.yearLevel} - \${row.section}\`;
+              const detailInfo = \`\${row.yearLevel} - \${row.section} <br><small style="color:#2980b9;">[\${row.position || 'Officer'}]</small>\`;
 
               const typeBadge = row.scanType === 'TIME-OUT' 
                 ? '<span class="badge-type-out">TIME-OUT</span>' 
@@ -870,20 +885,17 @@ app.get('/', async (req, res) => {
 
           const stBody = document.getElementById('studentsTableBody');
           if (!registeredStudents || registeredStudents.length === 0) {
-            stBody.innerHTML = '<tr><td colspan="7" style="text-align:center;">No participants registered yet.</td></tr>';
+            stBody.innerHTML = '<tr><td colspan="8" style="text-align:center;">No participants registered yet.</td></tr>';
           } else {
             stBody.innerHTML = registeredStudents.map(st => {
-              const detailInfo = (st.position && st.position !== 'N/A') 
-                ? \`<strong style="color: #2980b9;">[\${st.position}]</strong>\` 
-                : \`\${st.yearLevel} - \${st.section}\`;
-
               const contactInfo = [st.email, st.phone].filter(Boolean).join('<br>') || '<span style="color:#aaa;">None</span>';
 
               return \`
                 <tr>
                   <td>\${st.studentId}</td>
                   <td><strong>\${st.name}</strong></td>
-                  <td>\${detailInfo}</td>
+                  <td>\${st.yearLevel || 'N/A'} - \${st.section || 'N/A'}</td>
+                  <td><strong style="color: #2980b9;">\${st.position || 'Officer'}</strong></td>
                   <td><small>\${contactInfo}</small></td>
                   <td>\${st.assignedEvent || 'General Event'}</td>
                   <td>\${st.uid ? '<code>' + st.uid + '</code>' : '<span style="color:#e67e22; font-weight:bold;">No Card Linked</span>'}</td>
@@ -912,7 +924,8 @@ app.get('/', async (req, res) => {
         window.location.href = '/api/export-csv?event=' + encodeURIComponent(selected);
       }
 
-      checkMeetingEvent();
+      updateDashboard();
+      setInterval(updateDashboard, 2000);
     </script>
   </body>
   </html>
