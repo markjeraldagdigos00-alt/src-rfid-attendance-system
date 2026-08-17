@@ -1,7 +1,9 @@
 {
   "dependencies": {
+    "bcryptjs": "^3.0.3",
     "ejs": "^6.0.1",
     "express": "^5.2.1",
+    "mongoose": "^9.9.2",
     "multer": "^2.2.0",
     "nodemailer": "^9.0.5",
     "socket.io": "^4.8.3",
@@ -11,12 +13,12 @@
   "version": "1.0.0",
   "description": "",
   "main": "index.js",
-  "devDependencies": {},
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "type": "commonjs"
+  "type": "commonjs",
+  "devDependencies": {}
 }
