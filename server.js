@@ -33,8 +33,6 @@ const studentSchema = new mongoose.Schema({
   assignedEvent: { type: String, default: 'General Event' }
 });
 
-const Participant = mongoose.models.Participant || mongoose.model('Student', studentSchema);
-
 const attendanceSchema = new mongoose.Schema({
   uid: String,
   name: String,
@@ -117,15 +115,12 @@ const { Resend } = require('resend');
 const resend = new Resend(process.env.RESEND_API_KEY || 'YOUR_RESEND_API_KEY');
 
 async function sendEmailNotification(config, recipientEmail, studentName, scanType, status, eventName, timestamp, duration) {
-  if (!recipientEmail) {
-    console.log('[EMAIL SKIPPED] Walang recipient email address.');
-    return;
-  }
+  if (!recipientEmail) return;
 
   const durationText = duration ? `<li><strong>Duration:</strong> ${duration}</li>` : '';
 
   try {
-    const data = await resend.emails.send({
+    await resend.emails.send({
       from: 'RFID System <onboarding@resend.dev>',
       to: recipientEmail,
       subject: `[${scanType}] Attendance Alert: ${studentName}`,
@@ -141,18 +136,14 @@ async function sendEmailNotification(config, recipientEmail, studentName, scanTy
             <li><strong>Time:</strong> ${timestamp}</li>
             ${durationText}
           </ul>
-          <p>Thank you!</p>
         </div>
       `
     });
-
-    console.log('[EMAIL SUCCESS] Naisend via Resend API:', data.id);
   } catch (error) {
-    console.error('[EMAIL ERROR] Resend API error:', error.message);
+    console.error('[EMAIL ERROR]', error.message);
   }
 }
 
-// Function para magpadala ng SMS via Semaphore API
 function sendSMSNotification(config, phoneNumber, studentName, scanType, status, eventName, timestamp, duration) {
   if (!config.enableSms || !config.semaphoreApiKey || !phoneNumber) return;
 
@@ -185,7 +176,6 @@ function sendSMSNotification(config, phoneNumber, studentName, scanType, status,
   req.end();
 }
 
-// Helper: Calculate Time Difference
 function calculateDuration(timeInDate, timeOutDate) {
   const diffMs = timeOutDate - timeInDate;
   if (isNaN(diffMs) || diffMs < 0) return 'N/A';
@@ -265,7 +255,6 @@ app.post('/api/scan', async (req, res) => {
         sendSMSNotification(config, student.phone, student.name, scanType, statusLabel, eventName, record.timestamp, duration);
       }
 
-      console.log(`[SCAN] ${student.name} logged [${scanType}] for ${eventName} [${statusLabel}]`);
       return res.json({ 
         status: 'success', 
         scanType, 
@@ -276,7 +265,6 @@ app.post('/api/scan', async (req, res) => {
       return res.json({ status: 'unknown', message: 'Card not registered' });
     }
   } catch (err) {
-    console.error('[SCAN ERROR]', err);
     res.status(500).json({ status: 'error', message: 'Server Error' });
   }
 });
@@ -298,7 +286,7 @@ app.get('/api/live-data', async (req, res) => {
   }
 });
 
-// API: Update System Name
+// Settings Endpoints
 app.post('/api/update-system-name', async (req, res) => {
   const { systemName } = req.body;
   if (systemName) {
@@ -309,7 +297,6 @@ app.post('/api/update-system-name', async (req, res) => {
   res.redirect('/');
 });
 
-// API: Upload Logo
 app.post('/api/upload-logo', upload.single('logoFile'), async (req, res) => {
   if (req.file) {
     const config = await getConfig();
@@ -319,7 +306,6 @@ app.post('/api/upload-logo', upload.single('logoFile'), async (req, res) => {
   res.redirect('/');
 });
 
-// API: Remove Logo
 app.post('/api/remove-logo', async (req, res) => {
   const config = await getConfig();
   config.logoPath = '';
@@ -327,7 +313,6 @@ app.post('/api/remove-logo', async (req, res) => {
   res.redirect('/');
 });
 
-// API: Save Notification Config
 app.post('/api/notification-settings', async (req, res) => {
   const { enableEmail, gmailUser, gmailPass, enableSms, semaphoreApiKey } = req.body;
   const config = await getConfig();
@@ -336,10 +321,7 @@ app.post('/api/notification-settings', async (req, res) => {
   config.gmailUser = gmailUser || 'markjeraldagdigos00@gmail.com';
   if (gmailPass && gmailPass !== '******') {
     config.gmailPass = gmailPass;
-  } else if (!config.gmailPass) {
-    config.gmailPass = 'iidgggfvklwjezsm';
   }
-
   config.enableSms = enableSms === 'on';
   config.semaphoreApiKey = semaphoreApiKey || '';
 
@@ -347,7 +329,6 @@ app.post('/api/notification-settings', async (req, res) => {
   res.redirect('/');
 });
 
-// API: Update Event & Cutoff Settings
 app.post('/api/event-settings', async (req, res) => {
   const { newEvent, activeEvent, cutoffTime } = req.body;
   const config = await getConfig();
@@ -364,7 +345,6 @@ app.post('/api/event-settings', async (req, res) => {
   res.redirect('/');
 });
 
-// API: Delete Event
 app.post('/api/delete-event', async (req, res) => {
   const { eventToDelete } = req.body;
   if (eventToDelete) {
@@ -378,7 +358,7 @@ app.post('/api/delete-event', async (req, res) => {
   res.redirect('/');
 });
 
-// API: Register / Update Student / Participant (Admin Side)
+// Admin Registration / Update Endpoint
 app.post('/api/register', async (req, res) => {
   try {
     const { uid, name, studentId, yearLevel, section, assignedEvent, position, customPosition, email, phone } = req.body;
@@ -408,25 +388,23 @@ app.post('/api/register', async (req, res) => {
         },
         { upsert: true, new: true }
       );
-
-      console.log(`[REGISTER/UPDATE] ${name} (${cleanUid}) updated in MongoDB.`);
     }
   } catch (err) {
-    console.error('[REGISTER/UPDATE ERROR]', err.message);
+    console.error('[REGISTER ERROR]', err.message);
   }
   res.redirect('/');
 });
 
-// API: Delete Student
+// Delete Student Endpoint
 app.post('/api/delete-student', async (req, res) => {
-  const { uid } = req.body;
-  if (uid) {
-    await Student.deleteOne({ uid });
-  }
-  res.redirect('/');
+  const { uid, id } = req.body;
+  if (uid) await Student.deleteOne({ uid });
+  if (id) await Student.findByIdAndDelete(id);
+
+  const referer = req.get('Referer') || '/';
+  res.redirect(referer);
 });
 
-// API: Export CSV
 app.get('/api/export-csv', async (req, res) => {
   const selectedEvent = req.query.event;
   let filter = {};
@@ -451,13 +429,14 @@ app.get('/api/export-csv', async (req, res) => {
   res.status(200).send(csv);
 });
 
-// API: Clear Logs
 app.post('/api/clear-logs', async (req, res) => {
   await Attendance.deleteMany({});
   res.redirect('/');
 });
 
-// Web Dashboard Interface
+// -------------------------------------------------------------
+// 1. MAIN ADMIN DASHBOARD ROUTE ( / )
+// -------------------------------------------------------------
 app.get('/', async (req, res) => {
   const config = await getConfig();
   const eventList = Array.isArray(config.events) ? config.events : ['General Event'];
@@ -505,12 +484,20 @@ app.get('/', async (req, res) => {
       details.settings-card summary { font-size: 1.2em; font-weight: bold; color: #1a252f; cursor: pointer; user-select: none; }
       details.settings-card[open] summary { margin-bottom: 15px; }
       .hidden-field { display: none; }
+      .nav-links { margin-bottom: 15px; background: #e8f4f8; padding: 10px 15px; border-radius: 6px; }
+      .nav-links a { margin-right: 15px; font-weight: bold; color: #2980b9; text-decoration: none; }
     </style>
   </head>
   <body>
     <div class="header-container">
       ${logoHtml}
       <h1>${config.systemName || 'RFID Attendance System'}</h1>
+    </div>
+
+    <div class="nav-links">
+      <strong>Portals:</strong>
+      <a href="/student-register" target="_blank">Student Registration Link (/student-register)</a> |
+      <a href="/student-portal" target="_blank">Student Management & Cancellation Link (/student-portal)</a>
     </div>
 
     <div class="container">
@@ -842,7 +829,7 @@ app.get('/', async (req, res) => {
                   <td>
                     <button type="button" class="btn-warning" onclick="editStudent('\${st.uid}')">Edit</button>
                     <form action="/api/delete-student" method="POST" class="delete-form" onsubmit="return confirm('Remove participant?');">
-                      <input type="hidden" name="uid" value="\${st.uid}">
+                      <input type="hidden" name="id" value="\${st._id}">
                       <button type="submit" class="btn-danger">Delete</button>
                     </form>
                   </td>
@@ -874,15 +861,17 @@ app.get('/', async (req, res) => {
   res.send(html);
 });
 
-// ROUTE PARA SA STUDENT PAGE LINK (/student)
-app.get('/student', (req, res) => {
+// -------------------------------------------------------------
+// 2. STUDENT REGISTRATION PORTAL ( /student-register )
+// -------------------------------------------------------------
+app.get('/student-register', (req, res) => {
   res.send(`
     <!DOCTYPE html>
     <html lang="en">
     <head>
       <meta charset="UTF-8">
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <title>Student Registration</title>
+      <title>Student Self-Registration</title>
       <style>
         body { font-family: Arial, sans-serif; background: #f4f6f9; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
         .card { background: white; padding: 30px; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); width: 100%; max-width: 400px; }
@@ -891,6 +880,7 @@ app.get('/student', (req, res) => {
         input { width: 100%; padding: 10px; margin: 8px 0 16px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
         button { width: 100%; background: #27ae60; color: white; padding: 12px; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; font-size: 16px; }
         button:hover { background: #219150; }
+        .link { text-align: center; margin-top: 15px; display: block; color: #2980b9; text-decoration: none; }
       </style>
     </head>
     <body>
@@ -911,13 +901,88 @@ app.get('/student', (req, res) => {
 
           <button type="submit">Submit Registration</button>
         </form>
+        <a href="/student-portal" class="link">Gusto mo bang i-manage o burahin ang submission mo? Click here</a>
       </div>
     </body>
     </html>
   `);
 });
 
-// STUDENT REGISTRATION ENDPOINT (AUTOMATIC OFFICER POSITION)
+// -------------------------------------------------------------
+// 3. STUDENT MANAGEMENT & CANCELLATION PORTAL ( /student-portal )
+// -------------------------------------------------------------
+app.get('/student-portal', async (req, res) => {
+  try {
+    const students = await Student.find({}).sort({ _id: -1 });
+
+    res.send(`
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>Student Registration Portal</title>
+      <style>
+        body { font-family: 'Segoe UI', Arial, sans-serif; background: #f4f6f9; margin: 0; padding: 20px; color: #333; }
+        .wrapper { max-width: 900px; margin: 0 auto; }
+        .card { background: white; padding: 25px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
+        h2 { color: #2c3e50; margin-top: 0; border-bottom: 2px solid #ecf0f1; padding-bottom: 10px; }
+        .btn-danger { background: #e74c3c; color: white; border: none; padding: 6px 12px; font-size: 0.85em; border-radius: 4px; cursor: pointer; }
+        .btn-danger:hover { background: #c0392b; }
+        table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+        th, td { border: 1px solid #e1e8ed; padding: 10px; text-align: left; }
+        th { background: #34495e; color: white; }
+        .badge { background: #2980b9; color: white; padding: 3px 8px; border-radius: 4px; font-size: 0.85em; font-weight: bold; }
+        .nav-btn { display: inline-block; margin-bottom: 15px; background: #27ae60; color: white; padding: 10px 15px; border-radius: 4px; text-decoration: none; font-weight: bold; }
+      </style>
+    </head>
+    <body>
+      <div class="wrapper">
+        <a href="/student-register" class="nav-btn">+ Mag-register ng Bago</a>
+        <div class="card">
+          <h2>Submitted Registrations Portal</h2>
+          <p style="font-size: 0.9em; color: #7f8c8d;">Maaari mong burahin o i-cancel ang iyong naisumiteng registration dito kapag may mali.</p>
+          <table>
+            <thead>
+              <tr>
+                <th>ID Number</th>
+                <th>Name</th>
+                <th>Email</th>
+                <th>Position</th>
+                <th>RFID Status</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${students.length === 0 ? '<tr><td colspan="6" style="text-align:center;">Wala pang nakatalang registration.</td></tr>' : ''}
+              ${students.map(s => `
+                <tr>
+                  <td>${s.studentId}</td>
+                  <td><strong>${s.name}</strong></td>
+                  <td>${s.email}</td>
+                  <td><span class="badge">${s.position || 'Officer'}</span></td>
+                  <td>${s.uid ? `<code>${s.uid}</code>` : '<span style="color:#e67e22; font-weight:bold;">Pending Linking</span>'}</td>
+                  <td>
+                    <form action="/api/delete-student" method="POST" style="margin:0;" onsubmit="return confirm('Sigurado ka bang gusto mong burahin ang submission na ito?');">
+                      <input type="hidden" name="id" value="${s._id}">
+                      <button type="submit" class="btn-danger">Delete / Cancel</button>
+                    </form>
+                  </td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </body>
+    </html>
+    `);
+  } catch (err) {
+    res.status(500).send('Error loading portal: ' + err.message);
+  }
+});
+
+// Student Self-Registration Endpoint (Automatic Officer Position)
 app.post('/api/register-student', async (req, res) => {
   try {
     const { name, email, studentId, phone } = req.body;
@@ -927,7 +992,7 @@ app.post('/api/register-student', async (req, res) => {
       return res.send(`
         <div style="text-align:center; padding:50px; font-family:Arial;">
           <h2 style="color:#e74c3c;">May nakarehistro nang ganyang email!</h2>
-          <a href="/student">Bumalik sa Registration</a>
+          <a href="/student-register">Bumalik sa Registration</a>
         </div>
       `);
     }
@@ -937,7 +1002,7 @@ app.post('/api/register-student', async (req, res) => {
       email,
       studentId,
       phone: phone || '',
-      position: 'Officer', // AUTOMATIC SET TO OFFICER
+      position: 'Officer',
       uid: null
     });
 
@@ -947,35 +1012,11 @@ app.post('/api/register-student', async (req, res) => {
         <h2 style="color:#2ecc71;">Registration Successful!</h2>
         <p>Nakarehistro na ang iyong impormasyon bilang <strong>Officer</strong>. Pakihintay na ma-assign ng Admin ang iyong RFID Card.</p>
         <br>
-        <a href="/student" style="color:#2980b9;">Mag-register ng panibagong student</a>
+        <a href="/student-portal" style="color:#2980b9; font-weight:bold;">Pumunta sa Student Portal para tingnan o i-manage ang submission</a>
       </div>
     `);
   } catch (err) {
     res.status(500).send('Registration Error: ' + err.message);
-  }
-});
-
-// API Route para i-link ang na-scan na RFID UID sa Profile ng Estudyante
-app.post('/api/assign-rfid', async (req, res) => {
-  try {
-    const { studentId, uid } = req.body;
-
-    const updatedStudent = await Student.findByIdAndUpdate(
-      studentId,
-      { uid: uid },
-      { new: true }
-    );
-
-    if (!updatedStudent) {
-      return res.status(404).json({ success: false, message: 'Student not found' });
-    }
-
-    res.json({ 
-      success: true, 
-      message: `Successfully linked RFID (${uid}) to ${updatedStudent.name}` 
-    });
-  } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
   }
 });
 
