@@ -1,25 +1,17 @@
 {
-  "dependencies": {
-    "bcryptjs": "^3.0.3",
-    "ejs": "^6.0.1",
-    "express": "^5.2.1",
-    "mongoose": "^9.9.2",
-    "multer": "^2.2.0",
-    "nodemailer": "^9.0.5",
-    "resend": "^6.20.0",
-    "socket.io": "^4.8.3",
-    "sqlite3": "^6.0.1"
-  },
-  "name": "admin",
+  "name": "src-rfid-attendance-system",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "main": "server.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node server.js"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "type": "commonjs",
-  "devDependencies": {}
+  "dependencies": {
+    "body-parser": "^1.20.2",
+    "exceljs": "^4.4.0",
+    "express": "^4.19.2",
+    "mongoose": "^8.3.1",
+    "multer": "^1.4.5-lts.1",
+    "nodemailer": "^6.9.13",
+    "resend": "^3.2.0"
+  }
 }
