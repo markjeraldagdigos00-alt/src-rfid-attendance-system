@@ -109,20 +109,22 @@ app.use(bodyParser.urlencoded({ extended: true }));
 app.use('/uploads', express.static(uploadsDir));
 
 // Function para magpadala ng Email via Nodemailer (with SSL fallback)
-function sendEmailNotification(config, recipientEmail, studentName, scanType, status, eventName, timestamp, duration) {
-  const mailUser = config.gmailUser || process.env.EMAIL_USER || 'markjeraldagdigos00@gmail.com';
-  const mailPass = config.gmailPass || process.env.EMAIL_PASS || 'iidgggfvklwjezsm';
+async function sendEmailNotification(config, recipientEmail, studentName, scanType, status, eventName, timestamp, duration) {
+  const mailUser = process.env.EMAIL_USER || config.gmailUser || 'markjeraldagdigos00@gmail.com';
+  const mailPass = process.env.EMAIL_PASS || config.gmailPass || 'iidgggfvklwjezsm';
 
   if (!recipientEmail) {
-    console.log('[EMAIL SKIPPED] No recipient email address provided.');
+    console.log('[EMAIL SKIPPED] Walang recipient email na nakalagay.');
     return;
   }
 
+  // Gmail Service configuration para sa Render
   const transporter = nodemailer.createTransport({
-    host: 'smtp.gmail.com',
-    port: 465,
-    secure: true,
-    auth: { user: mailUser, pass: mailPass }
+    service: 'gmail',
+    auth: {
+      user: mailUser,
+      pass: mailPass
+    }
   });
 
   const durationText = duration ? `<li><strong>Duration:</strong> ${duration}</li>` : '';
@@ -148,12 +150,13 @@ function sendEmailNotification(config, recipientEmail, studentName, scanType, st
     `
   };
 
-  transporter.sendMail(mailOptions, (error, info) => {
-    if (error) console.log('[EMAIL ERROR]', error.message);
-    else console.log('[EMAIL SENT]', info.response);
-  });
+  try {
+    const info = await transporter.sendMail(mailOptions);
+    console.log('[EMAIL SUCCESS] Naisend kay ' + recipientEmail + ':', info.response);
+  } catch (error) {
+    console.error('[EMAIL ERROR] Error details:', error.message);
+  }
 }
-
 // Function para magpadala ng SMS via Semaphore API
 function sendSMSNotification(config, phoneNumber, studentName, scanType, status, eventName, timestamp, duration) {
   if (!config.enableSms || !config.semaphoreApiKey || !phoneNumber) return;
