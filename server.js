@@ -22,17 +22,17 @@ mongoose.connect(MONGO_URI)
 
 // MONGOOSE SCHEMAS & MODELS
 const studentSchema = new mongoose.Schema({
- uid: { type: String, default: null },
+  uid: { type: String, default: null },
   studentId: { type: String, required: true },
   name: { type: String, required: true },
   yearLevel: { type: String, default: 'Grade 7' },
   section: { type: String, default: 'A' },
-  position: { type: String, default: 'N/A' },
+  position: { type: String, default: 'Officer' },
   email: { type: String, default: '' },
   phone: { type: String, default: '' },
   assignedEvent: { type: String, default: 'General Event' }
 });
-// Ilagay ito sa Line 35:
+
 const Participant = mongoose.models.Participant || mongoose.model('Student', studentSchema);
 
 const attendanceSchema = new mongoose.Schema({
@@ -112,7 +112,7 @@ app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use('/uploads', express.static(uploadsDir));
 
-// Function para magpadala ng Email via Nodemailer (with SSL fallback)
+// Function para magpadala ng Email via Resend
 const { Resend } = require('resend');
 const resend = new Resend(process.env.RESEND_API_KEY || 'YOUR_RESEND_API_KEY');
 
@@ -126,7 +126,7 @@ async function sendEmailNotification(config, recipientEmail, studentName, scanTy
 
   try {
     const data = await resend.emails.send({
-      from: 'RFID System <onboarding@resend.dev>', // Libreng testing sender ng Resend
+      from: 'RFID System <onboarding@resend.dev>',
       to: recipientEmail,
       subject: `[${scanType}] Attendance Alert: ${studentName}`,
       html: `
@@ -151,6 +151,7 @@ async function sendEmailNotification(config, recipientEmail, studentName, scanTy
     console.error('[EMAIL ERROR] Resend API error:', error.message);
   }
 }
+
 // Function para magpadala ng SMS via Semaphore API
 function sendSMSNotification(config, phoneNumber, studentName, scanType, status, eventName, timestamp, duration) {
   if (!config.enableSms || !config.semaphoreApiKey || !phoneNumber) return;
@@ -244,7 +245,7 @@ app.post('/api/scan', async (req, res) => {
         studentId: student.studentId,
         yearLevel: student.yearLevel || 'N/A',
         section: student.section || 'N/A',
-        position: student.position || 'N/A',
+        position: student.position || 'Officer',
         email: student.email || '',
         phone: student.phone || '',
         event: eventName,
@@ -377,7 +378,7 @@ app.post('/api/delete-event', async (req, res) => {
   res.redirect('/');
 });
 
-// API: Register / Update Student / Participant
+// API: Register / Update Student / Participant (Admin Side)
 app.post('/api/register', async (req, res) => {
   try {
     const { uid, name, studentId, yearLevel, section, assignedEvent, position, customPosition, email, phone } = req.body;
@@ -385,7 +386,7 @@ app.post('/api/register', async (req, res) => {
     if (uid && name && studentId) {
       const cleanUid = uid.trim().toUpperCase();
 
-      let finalPosition = 'N/A';
+      let finalPosition = 'Officer';
       if (position === 'Other' && customPosition) {
         finalPosition = customPosition.trim();
       } else if (position) {
@@ -438,7 +439,7 @@ app.get('/api/export-csv', async (req, res) => {
 
   let csv = 'UID,ID Number,Name,Grade Level,Section,Position,Email,Phone,Event,Type,Status,Duration,Timestamp\n';
   attendance.forEach(row => {
-    csv += `"${row.uid}","${row.studentId}","${row.name}","${row.yearLevel}","${row.section}","${row.position || 'N/A'}","${row.email || ''}","${row.phone || ''}","${row.event}","${row.scanType || 'TIME-IN'}","${row.status}","${row.duration || 'N/A'}","${row.timestamp}"\n`;
+    csv += `"${row.uid}","${row.studentId}","${row.name}","${row.yearLevel}","${row.section}","${row.position || 'Officer'}","${row.email || ''}","${row.phone || ''}","${row.event}","${row.scanType || 'TIME-IN'}","${row.status}","${row.duration || 'N/A'}","${row.timestamp}"\n`;
   });
 
   const filename = selectedEvent && selectedEvent !== 'ALL' 
@@ -513,7 +514,6 @@ app.get('/', async (req, res) => {
     </div>
 
     <div class="container">
-      
       <details class="settings-card">
         <summary> System, Event & Notification Settings </summary>
         
@@ -631,8 +631,8 @@ app.get('/', async (req, res) => {
           <div id="meetingFields" class="hidden-field">
             <label><strong>Position / Role (For Meeting):</strong></label>
             <select id="positionSelect" name="position" onchange="checkCustomPosition()">
+              <option value="Officer" selected>Officer</option>
               <option value="Member">Member</option>
-              <option value="Officer">Officer</option>
               <option value="President">President</option>
               <option value="Vice President">Vice President</option>
               <option value="Secretary">Secretary</option>
@@ -653,7 +653,6 @@ app.get('/', async (req, res) => {
           <button type="button" id="cancelEditBtn" onclick="resetForm()" class="btn-danger hidden-field" style="width: 100%; margin-top: 5px;">Cancel Edit</button>
         </form>
       </div>
-
     </div>
 
     <div class="card" style="margin-top: 20px;">
@@ -753,7 +752,7 @@ app.get('/', async (req, res) => {
         if (student.yearLevel) document.getElementById('yearLevelSelect').value = student.yearLevel;
         if (student.section) document.getElementById('sectionInput').value = student.section;
 
-        if (student.position && student.position !== 'N/A') {
+        if (student.position) {
           const posSelect = document.getElementById('positionSelect');
           const options = Array.from(posSelect.options).map(o => o.value);
           if (options.includes(student.position)) {
@@ -839,7 +838,7 @@ app.get('/', async (req, res) => {
                   <td>\${detailInfo}</td>
                   <td><small>\${contactInfo}</small></td>
                   <td>\${st.assignedEvent || 'General Event'}</td>
-                  <td><code>\${st.uid}</code></td>
+                  <td><code>\${st.uid || 'Pending'}</code></td>
                   <td>
                     <button type="button" class="btn-warning" onclick="editStudent('\${st.uid}')">Edit</button>
                     <form action="/api/delete-student" method="POST" class="delete-form" onsubmit="return confirm('Remove participant?');">
@@ -874,17 +873,54 @@ app.get('/', async (req, res) => {
   `;
   res.send(html);
 });
-// 1. ROUTE PARA SA STUDENT PAGE LINK (/student)
+
+// ROUTE PARA SA STUDENT PAGE LINK (/student)
 app.get('/student', (req, res) => {
-  // ... (ito yung HTML form code na nilagay natin kanina)
+  res.send(`
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>Student Registration</title>
+      <style>
+        body { font-family: Arial, sans-serif; background: #f4f6f9; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
+        .card { background: white; padding: 30px; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); width: 100%; max-width: 400px; }
+        h2 { text-align: center; color: #2c3e50; margin-bottom: 20px; }
+        label { font-weight: bold; font-size: 14px; color: #34495e; }
+        input { width: 100%; padding: 10px; margin: 8px 0 16px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
+        button { width: 100%; background: #27ae60; color: white; padding: 12px; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; font-size: 16px; }
+        button:hover { background: #219150; }
+      </style>
+    </head>
+    <body>
+      <div class="card">
+        <h2>Student Registration</h2>
+        <form action="/api/register-student" method="POST">
+          <label>ID Number:</label>
+          <input type="text" name="studentId" placeholder="e.g. 2026-1001" required>
+
+          <label>Full Name:</label>
+          <input type="text" name="name" placeholder="Juan Dela Cruz" required>
+
+          <label>Email Address:</label>
+          <input type="email" name="email" placeholder="juan@gmail.com" required>
+
+          <label>Phone Number (Optional):</label>
+          <input type="tel" name="phone" placeholder="09171234567">
+
+          <button type="submit">Submit Registration</button>
+        </form>
+      </div>
+    </body>
+    </html>
+  `);
 });
 
-// ==========================================
-// DITO MO I-PASTE O I-UPDATE ANG SOLUSYON 2:
-// ==========================================
+// STUDENT REGISTRATION ENDPOINT (AUTOMATIC OFFICER POSITION)
 app.post('/api/register-student', async (req, res) => {
   try {
-    const { name, email, studentId } = req.body;
+    const { name, email, studentId, phone } = req.body;
 
     const existing = await Student.findOne({ email });
     if (existing) {
@@ -900,14 +936,18 @@ app.post('/api/register-student', async (req, res) => {
       name,
       email,
       studentId,
-      uid: null // Pwede nang maging null muna
+      phone: phone || '',
+      position: 'Officer', // AUTOMATIC SET TO OFFICER
+      uid: null
     });
 
     await newStudent.save();
     res.send(`
       <div style="text-align:center; padding:50px; font-family:Arial;">
         <h2 style="color:#2ecc71;">Registration Successful!</h2>
-        <p>Nakarehistro na ang iyong impormasyon. Pakihintay na ma-assign ng Admin ang iyong RFID Card.</p>
+        <p>Nakarehistro na ang iyong impormasyon bilang <strong>Officer</strong>. Pakihintay na ma-assign ng Admin ang iyong RFID Card.</p>
+        <br>
+        <a href="/student" style="color:#2980b9;">Mag-register ng panibagong student</a>
       </div>
     `);
   } catch (err) {
@@ -915,9 +955,6 @@ app.post('/api/register-student', async (req, res) => {
   }
 });
 
-// ==========================================
-// PINAKADULO NG FILE (HUWAG GALAWIN):
-// ==========================================
 // API Route para i-link ang na-scan na RFID UID sa Profile ng Estudyante
 app.post('/api/assign-rfid', async (req, res) => {
   try {
@@ -941,6 +978,7 @@ app.post('/api/assign-rfid', async (req, res) => {
     res.status(500).json({ success: false, error: err.message });
   }
 });
+
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
 });
