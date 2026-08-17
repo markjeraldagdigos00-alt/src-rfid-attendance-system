@@ -109,52 +109,42 @@ app.use(bodyParser.urlencoded({ extended: true }));
 app.use('/uploads', express.static(uploadsDir));
 
 // Function para magpadala ng Email via Nodemailer (with SSL fallback)
-async function sendEmailNotification(config, recipientEmail, studentName, scanType, status, eventName, timestamp, duration) {
-  const mailUser = process.env.EMAIL_USER || config.gmailUser || 'markjeraldagdigos00@gmail.com';
-  const mailPass = process.env.EMAIL_PASS || config.gmailPass || 'iidgggfvklwjezsm';
+const { Resend } = require('resend');
+const resend = new Resend(process.env.RESEND_API_KEY || 'YOUR_RESEND_API_KEY');
 
+async function sendEmailNotification(config, recipientEmail, studentName, scanType, status, eventName, timestamp, duration) {
   if (!recipientEmail) {
-    console.log('[EMAIL SKIPPED] Walang recipient email na nakalagay.');
+    console.log('[EMAIL SKIPPED] Walang recipient email address.');
     return;
   }
 
-  // Gmail Service configuration para sa Render
-  const transporter = nodemailer.createTransport({
-    service: 'gmail',
-    auth: {
-      user: mailUser,
-      pass: mailPass
-    }
-  });
-
   const durationText = duration ? `<li><strong>Duration:</strong> ${duration}</li>` : '';
 
-  const mailOptions = {
-    from: `"${config.systemName || 'RFID Attendance System'}" <${mailUser}>`,
-    to: recipientEmail,
-    subject: `[${scanType}] Attendance Alert: ${studentName}`,
-    html: `
-      <div style="font-family: Arial, sans-serif; padding: 15px; border: 1px solid #ddd; border-radius: 6px;">
-        <h2 style="color: #2c3e50;">Attendance Notification (${scanType})</h2>
-        <p>Hello,</p>
-        <p>This is an automated notification to confirm that <strong>${studentName}</strong> has logged <strong>${scanType}</strong>.</p>
-        <ul>
-          <li><strong>Event:</strong> ${eventName}</li>
-          <li><strong>Scan Type:</strong> <span style="color:#2980b9; font-weight:bold;">${scanType}</span></li>
-          <li><strong>Status:</strong> <span style="color:${status === 'LATE' ? '#e74c3c' : '#2ecc71'}; font-weight:bold;">${status}</span></li>
-          <li><strong>Time:</strong> ${timestamp}</li>
-          ${durationText}
-        </ul>
-        <p>Thank you!</p>
-      </div>
-    `
-  };
-
   try {
-    const info = await transporter.sendMail(mailOptions);
-    console.log('[EMAIL SUCCESS] Naisend kay ' + recipientEmail + ':', info.response);
+    const data = await resend.emails.send({
+      from: 'RFID System <onboarding@resend.dev>', // Libreng testing sender ng Resend
+      to: recipientEmail,
+      subject: `[${scanType}] Attendance Alert: ${studentName}`,
+      html: `
+        <div style="font-family: Arial, sans-serif; padding: 15px; border: 1px solid #ddd; border-radius: 6px;">
+          <h2 style="color: #2c3e50;">Attendance Notification (${scanType})</h2>
+          <p>Hello,</p>
+          <p>This is an automated notification to confirm that <strong>${studentName}</strong> has logged <strong>${scanType}</strong>.</p>
+          <ul>
+            <li><strong>Event:</strong> ${eventName}</li>
+            <li><strong>Scan Type:</strong> <span style="color:#2980b9; font-weight:bold;">${scanType}</span></li>
+            <li><strong>Status:</strong> <span style="color:${status === 'LATE' ? '#e74c3c' : '#2ecc71'}; font-weight:bold;">${status}</span></li>
+            <li><strong>Time:</strong> ${timestamp}</li>
+            ${durationText}
+          </ul>
+          <p>Thank you!</p>
+        </div>
+      `
+    });
+
+    console.log('[EMAIL SUCCESS] Naisend via Resend API:', data.id);
   } catch (error) {
-    console.error('[EMAIL ERROR] Error details:', error.message);
+    console.error('[EMAIL ERROR] Resend API error:', error.message);
   }
 }
 // Function para magpadala ng SMS via Semaphore API
