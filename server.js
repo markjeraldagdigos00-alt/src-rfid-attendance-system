@@ -88,7 +88,7 @@ async function ensureExcelTemplateExists() {
 
   // Add Left Logo (BNHS Logo)
   let bnhsLogoPath = path.join(__dirname, 'school_logo');
-  if (!fs.existsSync(bnhsLogoPath)) bnhsLogoPath = path.join(__dirname, 'bnhs_logo.png');
+  if (!fs.existsSync(bnhsLogoPath)) bnhsLogoPath = path.join(__dirname, 'school_logo');
 
   if (fs.existsSync(bnhsLogoPath)) {
     const ext = path.extname(bnhsLogoPath).toLowerCase() === '.png' ? 'png' : 'jpeg';
