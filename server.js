@@ -7,9 +7,10 @@ const nodemailer = require('nodemailer');
 const https = require('https');
 const querystring = require('querystring');
 const mongoose = require('mongoose');
+
+const app = express();
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
-const app = express();
 const PORT = process.env.PORT || 3000;
 
 // MONGOOSE DATABASE CONNECTION
