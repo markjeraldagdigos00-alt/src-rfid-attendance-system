@@ -13,6 +13,9 @@ app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 const PORT = process.env.PORT || 3000;
 
+// ADMIN PIN / PASSWORD (Baguhin kung kinakailangan)
+const ADMIN_PIN = process.env.ADMIN_PIN || "1234";
+
 // MONGOOSE DATABASE CONNECTION
 const MONGO_URI = process.env.MONGO_URI || 'mongodb+srv://srcadmin:30005BNHS@cluster0.he7jspr.mongodb.net/scholarhub_db?appName=Cluster0';
 
@@ -20,9 +23,9 @@ mongoose.connect(MONGO_URI)
   .then(() => console.log('[DATABASE] Connected to MongoDB Atlas successfully!'))
   .catch(err => console.error('[DATABASE ERROR] Could not connect to MongoDB:', err.message));
 
-// MONGOOSE SCHEMAS & MODELS
+// SCHEMAS & MODELS
 const studentSchema = new mongoose.Schema({
-  uid: { type: String, default: null },
+  uid: { type: String, default: '' },
   studentId: { type: String, required: true },
   name: { type: String, required: true },
   yearLevel: { type: String, default: 'Grade 7' },
@@ -68,7 +71,6 @@ const Student = mongoose.model('Student', studentSchema);
 const Attendance = mongoose.model('Attendance', attendanceSchema);
 const Config = mongoose.model('Config', configSchema);
 
-// Helper para ma-load ang System Config
 async function getConfig() {
   let config = await Config.findOne();
   if (!config) {
@@ -81,7 +83,7 @@ async function getConfig() {
   return config;
 }
 
-// Setup Storage para sa Uploaded Logos
+// UPLOADS SETUP FOR SCHOOL LOGO
 const uploadsDir = path.join(__dirname, 'uploads');
 if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
@@ -110,15 +112,13 @@ app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use('/uploads', express.static(uploadsDir));
 
-// Function para magpadala ng Email via Resend
+// NOTIFICATIONS (EMAIL & SMS)
 const { Resend } = require('resend');
 const resend = new Resend(process.env.RESEND_API_KEY || 'YOUR_RESEND_API_KEY');
 
 async function sendEmailNotification(config, recipientEmail, studentName, scanType, status, eventName, timestamp, duration) {
   if (!recipientEmail) return;
-
   const durationText = duration ? `<li><strong>Duration:</strong> ${duration}</li>` : '';
-
   try {
     await resend.emails.send({
       from: 'RFID System <onboarding@resend.dev>',
@@ -146,48 +146,29 @@ async function sendEmailNotification(config, recipientEmail, studentName, scanTy
 
 function sendSMSNotification(config, phoneNumber, studentName, scanType, status, eventName, timestamp, duration) {
   if (!config.enableSms || !config.semaphoreApiKey || !phoneNumber) return;
-
   let message = `[Attendance] ${studentName} logged ${scanType} for ${eventName} at ${timestamp}. Status: ${status}.`;
   if (duration) message += ` Duration: ${duration}.`;
 
-  const postData = querystring.stringify({
-    apikey: config.semaphoreApiKey,
-    number: phoneNumber,
-    message: message
-  });
-
+  const postData = querystring.stringify({ apikey: config.semaphoreApiKey, number: phoneNumber, message: message });
   const options = {
-    hostname: 'api.semaphore.co',
-    port: 443,
-    path: '/api/v4/messages',
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
-      'Content-Length': postData.length
-    }
+    hostname: 'api.semaphore.co', port: 443, path: '/api/v4/messages', method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Content-Length': postData.length }
   };
-
-  const req = https.request(options, (res) => {
-    res.on('data', (d) => console.log('[SMS RESPONSE]', d.toString()));
-  });
-
+  const req = https.request(options, (res) => { res.on('data', (d) => console.log('[SMS RESPONSE]', d.toString())); });
   req.on('error', (e) => console.error('[SMS ERROR]', e.message));
-  req.write(postData);
-  req.end();
+  req.write(postData); req.end();
 }
 
 function calculateDuration(timeInDate, timeOutDate) {
   const diffMs = timeOutDate - timeInDate;
   if (isNaN(diffMs) || diffMs < 0) return 'N/A';
-
   const totalMinutes = Math.floor(diffMs / (1000 * 60));
   const hours = Math.floor(totalMinutes / 60);
   const mins = totalMinutes % 60;
-
   return hours > 0 ? `${hours}h ${mins}m` : `${mins}m`;
 }
 
-// API: ESP8266 RFID Scan (Time-In / Time-Out Logic)
+// API: ESP8266 SCANNER ENDPOINT
 app.post('/api/scan', async (req, res) => {
   try {
     const { uid } = req.body;
@@ -204,7 +185,6 @@ app.post('/api/scan', async (req, res) => {
 
     if (student) {
       const eventName = student.assignedEvent || config.currentEvent || 'General Event';
-
       const startOfDay = new Date(now.setHours(0, 0, 0, 0));
       const endOfDay = new Date(now.setHours(23, 59, 59, 999));
       const scanTime = new Date();
@@ -225,8 +205,7 @@ app.post('/api/scan', async (req, res) => {
         duration = calculateDuration(new Date(lastLog.rawTimestamp), scanTime);
       } else {
         const currentTimeStr = scanTime.toTimeString().slice(0, 5);
-        const isLate = currentTimeStr > (config.cutoffTime || '08:00');
-        statusLabel = isLate ? 'LATE' : 'ON TIME';
+        statusLabel = currentTimeStr > (config.cutoffTime || '08:00') ? 'LATE' : 'ON TIME';
       }
 
       const record = new Attendance({
@@ -239,7 +218,7 @@ app.post('/api/scan', async (req, res) => {
         email: student.email || '',
         phone: student.phone || '',
         event: eventName,
-        scanType: scanType,
+        scanType,
         status: statusLabel,
         duration: duration || 'N/A',
         timestamp: scanTime.toLocaleString(),
@@ -255,12 +234,7 @@ app.post('/api/scan', async (req, res) => {
         sendSMSNotification(config, student.phone, student.name, scanType, statusLabel, eventName, record.timestamp, duration);
       }
 
-      return res.json({ 
-        status: 'success', 
-        scanType, 
-        isLate: statusLabel === 'LATE', 
-        message: `${scanType} recorded for ${student.name}` 
-      });
+      return res.json({ status: 'success', scanType, isLate: statusLabel === 'LATE', message: `${scanType} recorded for ${student.name}` });
     } else {
       return res.json({ status: 'unknown', message: 'Card not registered' });
     }
@@ -269,7 +243,7 @@ app.post('/api/scan', async (req, res) => {
   }
 });
 
-// API: Realtime Data
+// REALTIME DATA ENDPOINT
 app.get('/api/live-data', async (req, res) => {
   try {
     const config = await getConfig();
@@ -286,7 +260,7 @@ app.get('/api/live-data', async (req, res) => {
   }
 });
 
-// Settings Endpoints
+// SETTINGS ENDPOINTS
 app.post('/api/update-system-name', async (req, res) => {
   const { systemName } = req.body;
   if (systemName) {
@@ -319,9 +293,7 @@ app.post('/api/notification-settings', async (req, res) => {
 
   config.enableEmail = enableEmail === 'on';
   config.gmailUser = gmailUser || 'markjeraldagdigos00@gmail.com';
-  if (gmailPass && gmailPass !== '******') {
-    config.gmailPass = gmailPass;
-  }
+  if (gmailPass && gmailPass !== '******') config.gmailPass = gmailPass;
   config.enableSms = enableSms === 'on';
   config.semaphoreApiKey = semaphoreApiKey || '';
 
@@ -358,60 +330,55 @@ app.post('/api/delete-event', async (req, res) => {
   res.redirect('/');
 });
 
-// Admin Registration / Update Endpoint
+// ADMIN REGISTER / EDIT PARTICIPANT ENDPOINT
 app.post('/api/register', async (req, res) => {
   try {
-    const { uid, name, studentId, yearLevel, section, assignedEvent, position, customPosition, email, phone } = req.body;
+    const { mongoId, uid, name, studentId, yearLevel, section, assignedEvent, position, customPosition, email, phone } = req.body;
+    let finalPosition = (position === 'Other' && customPosition) ? customPosition.trim() : position || 'Officer';
+    const cleanUid = uid ? uid.trim().toUpperCase() : '';
 
-    if (uid && name && studentId) {
-      const cleanUid = uid.trim().toUpperCase();
-
-      let finalPosition = 'Officer';
-      if (position === 'Other' && customPosition) {
-        finalPosition = customPosition.trim();
-      } else if (position) {
-        finalPosition = position;
-      }
-
-      await Student.findOneAndUpdate(
-        { uid: cleanUid },
-        {
-          uid: cleanUid,
-          name,
-          studentId,
-          yearLevel: yearLevel || 'Grade 7',
-          section: section || 'A',
-          position: finalPosition,
-          email: email || '',
-          phone: phone || '',
-          assignedEvent: assignedEvent || 'General Event'
-        },
-        { upsert: true, new: true }
-      );
+    if (mongoId) {
+      await Student.findByIdAndUpdate(mongoId, {
+        uid: cleanUid,
+        name,
+        studentId,
+        yearLevel: yearLevel || 'Grade 7',
+        section: section || 'A',
+        position: finalPosition,
+        email: email || '',
+        phone: phone || '',
+        assignedEvent: assignedEvent || 'General Event'
+      });
+    } else {
+      const newStudent = new Student({
+        uid: cleanUid,
+        name,
+        studentId,
+        yearLevel: yearLevel || 'Grade 7',
+        section: section || 'A',
+        position: finalPosition,
+        email: email || '',
+        phone: phone || '',
+        assignedEvent: assignedEvent || 'General Event'
+      });
+      await newStudent.save();
     }
   } catch (err) {
-    console.error('[REGISTER ERROR]', err.message);
+    console.error('[SAVE ERROR]', err.message);
   }
   res.redirect('/');
 });
 
-// Delete Student Endpoint
 app.post('/api/delete-student', async (req, res) => {
-  const { uid, id } = req.body;
-  if (uid) await Student.deleteOne({ uid });
+  const { id } = req.body;
   if (id) await Student.findByIdAndDelete(id);
-
-  const referer = req.get('Referer') || '/';
-  res.redirect(referer);
+  res.redirect('/');
 });
 
 app.get('/api/export-csv', async (req, res) => {
   const selectedEvent = req.query.event;
   let filter = {};
-
-  if (selectedEvent && selectedEvent !== 'ALL') {
-    filter.event = selectedEvent;
-  }
+  if (selectedEvent && selectedEvent !== 'ALL') filter.event = selectedEvent;
 
   const attendance = await Attendance.find(filter).sort({ rawTimestamp: -1 });
 
@@ -435,7 +402,76 @@ app.post('/api/clear-logs', async (req, res) => {
 });
 
 // -------------------------------------------------------------
-// 1. MAIN ADMIN DASHBOARD ROUTE ( / )
+// 1. PUBLIC STUDENT REGISTRATION FORM ONLY ( /student-register )
+// -------------------------------------------------------------
+app.get('/student-register', (req, res) => {
+  res.send(`
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>Student Self-Registration</title>
+      <style>
+        body { font-family: 'Segoe UI', Arial, sans-serif; background: #f4f6f9; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
+        .card { background: white; padding: 30px; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); width: 100%; max-width: 400px; }
+        h2 { text-align: center; color: #2c3e50; margin-bottom: 20px; }
+        label { font-weight: bold; font-size: 14px; color: #34495e; }
+        input { width: 100%; padding: 10px; margin: 8px 0 16px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
+        button { width: 100%; background: #27ae60; color: white; padding: 12px; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; font-size: 16px; }
+        button:hover { background: #219150; }
+      </style>
+    </head>
+    <body>
+      <div class="card">
+        <h2>Student Registration Form</h2>
+        <form action="/api/register-student" method="POST">
+          <label>ID Number:</label>
+          <input type="text" name="studentId" placeholder="e.g. 2026-1001" required>
+
+          <label>Full Name:</label>
+          <input type="text" name="name" placeholder="Juan Dela Cruz" required>
+
+          <label>Email Address:</label>
+          <input type="email" name="email" placeholder="juan@gmail.com" required>
+
+          <label>Phone Number (Optional):</label>
+          <input type="tel" name="phone" placeholder="09171234567">
+
+          <button type="submit">Submit Registration</button>
+        </form>
+      </div>
+    </body>
+    </html>
+  `);
+});
+
+app.post('/api/register-student', async (req, res) => {
+  try {
+    const { name, email, studentId, phone } = req.body;
+    const existing = await Student.findOne({ email });
+    if (existing) {
+      return res.send(`<div style="text-align:center; padding:50px; font-family:Arial;"><h2 style="color:#e74c3c;">May nakarehistro nang ganyang email!</h2><a href="/student-register">Bumalik sa Form</a></div>`);
+    }
+
+    const newStudent = new Student({
+      name, email, studentId, phone: phone || '', position: 'Officer', uid: ''
+    });
+
+    await newStudent.save();
+    res.send(`
+      <div style="text-align:center; padding:50px; font-family:Arial;">
+        <h2 style="color:#2ecc71;">Registration Successful!</h2>
+        <p>Salamat <strong>${name}</strong>! Naisumite na ang iyong impormasyon. I-a-assign ng Admin ang iyong RFID Card.</p>
+      </div>
+    `);
+  } catch (err) {
+    res.status(500).send('Error: ' + err.message);
+  }
+});
+
+// -------------------------------------------------------------
+// 2. PROTECTED ADMIN DASHBOARD ( / ) WITH PIN SECURITY
 // -------------------------------------------------------------
 app.get('/', async (req, res) => {
   const config = await getConfig();
@@ -447,11 +483,9 @@ app.get('/', async (req, res) => {
     gradeOptions += `<option value="Grade ${i}">Grade ${i}</option>`;
   }
 
-  const logoHtml = config.logoPath 
-    ? `<img src="${config.logoPath}" alt="School Logo" class="header-logo">` 
-    : '';
+  const logoHtml = config.logoPath ? `<img src="${config.logoPath}" alt="School Logo" class="header-logo">` : '';
 
-  const html = `
+  res.send(`
   <!DOCTYPE html>
   <html lang="en">
   <head>
@@ -460,6 +494,8 @@ app.get('/', async (req, res) => {
     <title>${config.systemName || 'RFID Attendance System'}</title>
     <style>
       body { font-family: 'Segoe UI', Tahoma, sans-serif; margin: 20px; background: #f0f2f5; color: #333; }
+      #loginOverlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #2c3e50; display: flex; justify-content: center; align-items: center; z-index: 9999; }
+      .login-box { background: white; padding: 30px; border-radius: 8px; text-align: center; width: 320px; box-shadow: 0 4px 15px rgba(0,0,0,0.2); }
       .header-container { display: flex; align-items: center; gap: 15px; margin-bottom: 20px; }
       .header-logo { height: 65px; width: auto; object-fit: contain; border-radius: 6px; }
       h1, h2, h3 { color: #1a252f; margin: 0; }
@@ -477,224 +513,248 @@ app.get('/', async (req, res) => {
       .badge-late { background: #e74c3c; color: white; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 0.85em; }
       .badge-type-in { background: #3498db; color: white; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 0.85em; }
       .badge-type-out { background: #9b59b6; color: white; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 0.85em; }
-      .delete-form { display: inline; }
       .section-divider { border: 0; height: 1px; background: #e1e8ed; margin: 15px 0; }
-      
       details.settings-card { background: white; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); padding: 15px 20px; }
-      details.settings-card summary { font-size: 1.2em; font-weight: bold; color: #1a252f; cursor: pointer; user-select: none; }
-      details.settings-card[open] summary { margin-bottom: 15px; }
-      .hidden-field { display: none; }
+      details.settings-card summary { font-size: 1.2em; font-weight: bold; color: #1a252f; cursor: pointer; }
+      .hidden-field, .hidden { display: none; }
       .nav-links { margin-bottom: 15px; background: #e8f4f8; padding: 10px 15px; border-radius: 6px; }
-      .nav-links a { margin-right: 15px; font-weight: bold; color: #2980b9; text-decoration: none; }
+      .nav-links a { font-weight: bold; color: #2980b9; text-decoration: none; }
     </style>
   </head>
   <body>
-    <div class="header-container">
-      ${logoHtml}
-      <h1>${config.systemName || 'RFID Attendance System'}</h1>
+
+    <!-- SECURITY PIN OVERLAY -->
+    <div id="loginOverlay">
+      <div class="login-box">
+        <h2>Admin Access</h2>
+        <p>I-enter ang Admin PIN Code:</p>
+        <input type="password" id="pinInput" placeholder="PIN Code (Default: 1234)" onkeypress="if(event.key==='Enter') checkPin()">
+        <button onclick="checkPin()" style="width:100%;">Enter Dashboard</button>
+        <p id="pinError" style="color:red; display:none; margin-top:10px; font-weight:bold;">Maling PIN Code!</p>
+      </div>
     </div>
 
-    <div class="nav-links">
-      <strong>Portals:</strong>
-      <a href="/student-register" target="_blank">Student Registration Link (/student-register)</a> |
-      <a href="/student-portal" target="_blank">Student Management & Cancellation Link (/student-portal)</a>
-    </div>
+    <div id="adminContent" class="hidden">
+      <div class="header-container">
+        ${logoHtml}
+        <h1>${config.systemName || 'RFID Attendance System'}</h1>
+      </div>
 
-    <div class="container">
-      <details class="settings-card">
-        <summary> System, Event & Notification Settings </summary>
-        
-        <div style="display: flex; flex-wrap: wrap; gap: 20px; margin-top: 10px;">
-          <div style="flex: 1; min-width: 280px;">
-            <h3>System Name & Logo</h3>
-            <form action="/api/update-system-name" method="POST">
-              <label><strong>System Name:</strong></label>
-              <input type="text" name="systemName" value="${config.systemName || 'RFID Attendance System'}" required>
-              <input type="submit" value="Save System Name" style="width: 100%;">
-            </form>
+      <div class="nav-links">
+        <strong>Student Self-Registration Link:</strong>
+        <a href="/student-register" target="_blank">/student-register (Ibigay sa mga Magre-rehistro)</a>
+      </div>
 
-            <hr class="section-divider">
-
-            <form action="/api/upload-logo" method="POST" enctype="multipart/form-data">
-              <label><strong>School Logo Image:</strong></label>
-              <input type="file" name="logoFile" accept="image/*" required>
-              <input type="submit" value="Upload Logo" class="btn-secondary" style="width: 100%; margin-bottom: 10px;">
-            </form>
-
-            ${config.logoPath ? `
-            <form action="/api/remove-logo" method="POST">
-              <button type="submit" class="btn-danger" style="width: 100%;">Remove Logo</button>
-            </form>
-            ` : ''}
-          </div>
-
-          <div style="flex: 1; min-width: 280px;">
-            <h3>Event Management</h3>
-            <form action="/api/event-settings" method="POST">
-              <label><strong>Active Event:</strong></label>
-              <select name="activeEvent">${eventOptions}</select>
-
-              <label><strong>Add New Event Name:</strong></label>
-              <input type="text" name="newEvent" placeholder="e.g. Faculty Meeting / Sports Day">
-
-              <label><strong>Late Cut-off Time (HH:MM):</strong></label>
-              <input type="time" name="cutoffTime" value="${config.cutoffTime || '08:00'}">
-
-              <input type="submit" value="Save Event Settings" style="width: 100%;">
-            </form>
-
-            <hr class="section-divider">
-
-            <h3>Delete Event</h3>
-            <form action="/api/delete-event" method="POST" onsubmit="return confirm('Delete this event?');">
-              <select name="eventToDelete">${eventOptions}</select>
-              <button type="submit" class="btn-danger" style="width: 100%;">Delete Selected Event</button>
-            </form>
-          </div>
-
-          <div style="flex: 1; min-width: 280px;">
-            <h3>SMS & Email API Settings</h3>
-            <form action="/api/notification-settings" method="POST">
-              <label>
-                <input type="checkbox" name="enableEmail" ${config.enableEmail ? 'checked' : ''} style="width: auto;">
-                <strong>Enable Email Notifications (Nodemailer)</strong>
-              </label>
-              <input type="email" name="gmailUser" placeholder="Gmail Address" value="${config.gmailUser || 'markjeraldagdigos00@gmail.com'}">
-              <input type="password" name="gmailPass" placeholder="Gmail App Password" value="${config.gmailPass ? '******' : ''}">
+      <div class="container">
+        <details class="settings-card">
+          <summary> System, Event & Notification Settings </summary>
+          
+          <div style="display: flex; flex-wrap: wrap; gap: 20px; margin-top: 10px;">
+            <div style="flex: 1; min-width: 280px;">
+              <h3>System Name & Logo</h3>
+              <form action="/api/update-system-name" method="POST">
+                <label><strong>System Name:</strong></label>
+                <input type="text" name="systemName" value="${config.systemName || 'RFID Attendance System'}" required>
+                <input type="submit" value="Save System Name" style="width: 100%;">
+              </form>
 
               <hr class="section-divider">
 
-              <label>
-                <input type="checkbox" name="enableSms" ${config.enableSms ? 'checked' : ''} style="width: auto;">
-                <strong>Enable SMS Notifications (Semaphore API)</strong>
-              </label>
-              <input type="text" name="semaphoreApiKey" placeholder="Semaphore API Key" value="${config.semaphoreApiKey || ''}">
+              <form action="/api/upload-logo" method="POST" enctype="multipart/form-data">
+                <label><strong>School Logo Image:</strong></label>
+                <input type="file" name="logoFile" accept="image/*" required>
+                <input type="submit" value="Upload Logo" class="btn-secondary" style="width: 100%; margin-bottom: 10px;">
+              </form>
 
-              <input type="submit" value="Save Notification API Settings" style="width: 100%; margin-top: 10px;">
-            </form>
+              ${config.logoPath ? `
+              <form action="/api/remove-logo" method="POST">
+                <button type="submit" class="btn-danger" style="width: 100%;">Remove Logo</button>
+              </form>
+              ` : ''}
+            </div>
+
+            <div style="flex: 1; min-width: 280px;">
+              <h3>Event Management</h3>
+              <form action="/api/event-settings" method="POST">
+                <label><strong>Active Event:</strong></label>
+                <select name="activeEvent">${eventOptions}</select>
+
+                <label><strong>Add New Event Name:</strong></label>
+                <input type="text" name="newEvent" placeholder="e.g. Faculty Meeting / Sports Day">
+
+                <label><strong>Late Cut-off Time (HH:MM):</strong></label>
+                <input type="time" name="cutoffTime" value="${config.cutoffTime || '08:00'}">
+
+                <input type="submit" value="Save Event Settings" style="width: 100%;">
+              </form>
+
+              <hr class="section-divider">
+
+              <h3>Delete Event</h3>
+              <form action="/api/delete-event" method="POST" onsubmit="return confirm('Delete this event?');">
+                <select name="eventToDelete">${eventOptions}</select>
+                <button type="submit" class="btn-danger" style="width: 100%;">Delete Selected Event</button>
+              </form>
+            </div>
+
+            <div style="flex: 1; min-width: 280px;">
+              <h3>SMS & Email API Settings</h3>
+              <form action="/api/notification-settings" method="POST">
+                <label>
+                  <input type="checkbox" name="enableEmail" ${config.enableEmail ? 'checked' : ''} style="width: auto;">
+                  <strong>Enable Email Notifications</strong>
+                </label>
+                <input type="email" name="gmailUser" placeholder="Gmail Address" value="${config.gmailUser || 'markjeraldagdigos00@gmail.com'}">
+                <input type="password" name="gmailPass" placeholder="Gmail App Password" value="${config.gmailPass ? '******' : ''}">
+
+                <hr class="section-divider">
+
+                <label>
+                  <input type="checkbox" name="enableSms" ${config.enableSms ? 'checked' : ''} style="width: auto;">
+                  <strong>Enable SMS Notifications (Semaphore)</strong>
+                </label>
+                <input type="text" name="semaphoreApiKey" placeholder="Semaphore API Key" value="${config.semaphoreApiKey || ''}">
+
+                <input type="submit" value="Save Notification Settings" style="width: 100%; margin-top: 10px;">
+              </form>
+            </div>
           </div>
+        </details>
+
+        <div class="card" id="registrationCard">
+          <h2 id="formTitle">Register / Edit Participant</h2>
+          <p>Last Scanned RFID Card UID: <strong id="scannedUid" style="color: #e67e22;">${config.latestUid || 'None'}</strong></p>
+          
+          <form action="/api/register" method="POST" id="registerForm">
+            <input type="hidden" id="mongoIdInput" name="mongoId">
+
+            <label><strong>RFID Card UID (Pwedeng i-link sa huli):</strong></label>
+            <input type="text" id="uidInput" name="uid" placeholder="RFID Card UID">
+            
+            <label><strong>ID Number:</strong></label>
+            <input type="text" id="studentIdInput" name="studentId" placeholder="ID Number" required>
+            
+            <label><strong>Full Name:</strong></label>
+            <input type="text" id="nameInput" name="name" placeholder="Full Name" required>
+
+            <div style="display: flex; gap: 10px;">
+              <div style="flex: 1;">
+                <label><strong>Email Address:</strong></label>
+                <input type="email" id="emailInput" name="email" placeholder="e.g. parent@gmail.com">
+              </div>
+              <div style="flex: 1;">
+                <label><strong>Phone Number:</strong></label>
+                <input type="tel" id="phoneInput" name="phone" placeholder="e.g. 09171234567">
+              </div>
+            </div>
+
+            <label><strong>Assign to Event:</strong></label>
+            <select id="eventSelect" name="assignedEvent" onchange="checkMeetingEvent()">${eventOptions}</select>
+
+            <div id="studentFields" style="display: flex; gap: 10px;">
+              <div style="flex: 1;">
+                <label><strong>Grade Level:</strong></label>
+                <select id="yearLevelSelect" name="yearLevel">${gradeOptions}</select>
+              </div>
+              <div style="flex: 1;">
+                <label><strong>Section:</strong></label>
+                <input type="text" id="sectionInput" name="section" placeholder="e.g. Diamond / A">
+              </div>
+            </div>
+
+            <div id="meetingFields" class="hidden-field">
+              <label><strong>Position / Role (For Meeting):</strong></label>
+              <select id="positionSelect" name="position" onchange="checkCustomPosition()">
+                <option value="Officer" selected>Officer</option>
+                <option value="Member">Member</option>
+                <option value="President">President</option>
+                <option value="Vice President">Vice President</option>
+                <option value="Secretary">Secretary</option>
+                <option value="Treasurer">Treasurer</option>
+                <option value="Teacher / Faculty">Teacher / Faculty</option>
+                <option value="Guest">Guest</option>
+                <option value="Other">Custom Position...</option>
+              </select>
+
+              <div id="customPositionBox" class="hidden-field">
+                <label><strong>Specify Custom Position:</strong></label>
+                <input type="text" id="customPositionInput" name="customPosition" placeholder="Enter position/role">
+              </div>
+            </div>
+
+            <button type="button" class="btn-secondary" onclick="useLatestUid()" style="width: 100%; margin-top: 10px; margin-bottom: 10px;">Link Last Scanned Card UID</button>
+            <input type="submit" id="submitBtn" value="Save / Update Participant" style="width: 100%;">
+            <button type="button" id="cancelEditBtn" onclick="resetForm()" class="btn-danger hidden-field" style="width: 100%; margin-top: 5px;">Cancel Edit</button>
+          </form>
         </div>
-      </details>
+      </div>
 
-      <div class="card" id="registrationCard">
-        <h2 id="formTitle">Register / Edit Participant</h2>
-        <p>Last Scanned UID: <strong id="scannedUid" style="color: #e67e22;">${config.latestUid || 'None'}</strong></p>
+      <div class="card" style="margin-top: 20px;">
+        <h2>Live Attendance Log (Time-In / Time-Out)</h2>
         
-        <form action="/api/register" method="POST" id="registerForm">
-          <label><strong>RFID Card UID:</strong></label>
-          <input type="text" id="uidInput" name="uid" placeholder="RFID Card UID" required>
-          
-          <label><strong>ID Number:</strong></label>
-          <input type="text" id="studentIdInput" name="studentId" placeholder="ID Number" required>
-          
-          <label><strong>Full Name:</strong></label>
-          <input type="text" id="nameInput" name="name" placeholder="Full Name" required>
+        <div style="display: flex; gap: 10px; align-items: center; margin-bottom: 15px;">
+          <label><strong>Export CSV for Event:</strong></label>
+          <select id="exportEventSelect" style="width: auto; margin: 0;">
+            <option value="ALL">All Events</option>
+            ${eventOptions}
+          </select>
+          <button type="button" onclick="downloadCSV()">Download CSV</button>
+          <form action="/api/clear-logs" method="POST" style="margin-left: auto;" onsubmit="return confirm('Clear all logs?');">
+            <button type="submit" class="btn-danger">Clear All Logs</button>
+          </form>
+        </div>
 
-          <div style="display: flex; gap: 10px;">
-            <div style="flex: 1;">
-              <label><strong>Email Address (Optional):</strong></label>
-              <input type="email" id="emailInput" name="email" placeholder="e.g. parent@gmail.com">
-            </div>
-            <div style="flex: 1;">
-              <label><strong>Phone Number (Optional):</strong></label>
-              <input type="tel" id="phoneInput" name="phone" placeholder="e.g. 09171234567">
-            </div>
-          </div>
-
-          <label><strong>Assign to Event:</strong></label>
-          <select id="eventSelect" name="assignedEvent" onchange="checkMeetingEvent()">${eventOptions}</select>
-
-          <div id="studentFields" style="display: flex; gap: 10px;">
-            <div style="flex: 1;">
-              <label><strong>Grade Level:</strong></label>
-              <select id="yearLevelSelect" name="yearLevel">${gradeOptions}</select>
-            </div>
-            <div style="flex: 1;">
-              <label><strong>Section:</strong></label>
-              <input type="text" id="sectionInput" name="section" placeholder="e.g. Diamond / A">
-            </div>
-          </div>
-
-          <div id="meetingFields" class="hidden-field">
-            <label><strong>Position / Role (For Meeting):</strong></label>
-            <select id="positionSelect" name="position" onchange="checkCustomPosition()">
-              <option value="Officer" selected>Officer</option>
-              <option value="Member">Member</option>
-              <option value="President">President</option>
-              <option value="Vice President">Vice President</option>
-              <option value="Secretary">Secretary</option>
-              <option value="Treasurer">Treasurer</option>
-              <option value="Teacher / Faculty">Teacher / Faculty</option>
-              <option value="Guest">Guest</option>
-              <option value="Other">Custom Position...</option>
-            </select>
-
-            <div id="customPositionBox" class="hidden-field">
-              <label><strong>Specify Custom Position:</strong></label>
-              <input type="text" id="customPositionInput" name="customPosition" placeholder="Enter custom position/role">
-            </div>
-          </div>
-
-          <button type="button" class="btn-secondary" onclick="useLatestUid()" style="width: 100%; margin-top: 10px; margin-bottom: 10px;">Use Last Scanned UID</button>
-          <input type="submit" id="submitBtn" value="Save / Update Participant" style="width: 100%;">
-          <button type="button" id="cancelEditBtn" onclick="resetForm()" class="btn-danger hidden-field" style="width: 100%; margin-top: 5px;">Cancel Edit</button>
-        </form>
-      </div>
-    </div>
-
-    <div class="card" style="margin-top: 20px;">
-      <h2>Live Attendance Log (Time-In / Time-Out)</h2>
-      
-      <div style="display: flex; gap: 10px; align-items: center; margin-bottom: 15px;">
-        <label><strong>Export CSV for Event:</strong></label>
-        <select id="exportEventSelect" style="width: auto; margin: 0;">
-          <option value="ALL">All Events</option>
-          ${eventOptions}
-        </select>
-        <button type="button" onclick="downloadCSV()">Download CSV</button>
-        <form action="/api/clear-logs" method="POST" style="margin-left: auto;" onsubmit="return confirm('Clear logs?');">
-          <button type="submit" class="btn-danger">Clear All Logs</button>
-        </form>
+        <table>
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>ID Number</th>
+              <th>Grade / Position</th>
+              <th>Event</th>
+              <th>Type</th>
+              <th>Status</th>
+              <th>Duration</th>
+              <th>Timestamp</th>
+              <th>UID</th>
+            </tr>
+          </thead>
+          <tbody id="attendanceTableBody"></tbody>
+        </table>
       </div>
 
-      <table>
-        <thead>
-          <tr>
-            <th>Name</th>
-            <th>ID Number</th>
-            <th>Grade / Position</th>
-            <th>Event</th>
-            <th>Type</th>
-            <th>Status</th>
-            <th>Duration</th>
-            <th>Timestamp</th>
-            <th>UID</th>
-          </tr>
-        </thead>
-        <tbody id="attendanceTableBody"></tbody>
-      </table>
-    </div>
-
-    <div class="card" style="margin-top: 20px;">
-      <h2>Registered Participants Database</h2>
-      <table>
-        <thead>
-          <tr>
-            <th>ID Number</th>
-            <th>Name</th>
-            <th>Grade / Position</th>
-            <th>Email / Phone</th>
-            <th>Assigned Event</th>
-            <th>Card UID</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
-        <tbody id="studentsTableBody"></tbody>
-      </table>
+      <div class="card" style="margin-top: 20px;">
+        <h2>Registered Participants Database</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>ID Number</th>
+              <th>Name</th>
+              <th>Grade / Position</th>
+              <th>Email / Phone</th>
+              <th>Assigned Event</th>
+              <th>Card UID</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="studentsTableBody"></tbody>
+        </table>
+      </div>
     </div>
 
     <script>
       let registeredStudents = [];
+
+      function checkPin() {
+        const pin = document.getElementById('pinInput').value;
+        if (pin === "${ADMIN_PIN}") {
+          document.getElementById('loginOverlay').style.display = 'none';
+          document.getElementById('adminContent').classList.remove('hidden');
+          updateDashboard();
+          setInterval(updateDashboard, 2000);
+        } else {
+          document.getElementById('pinError').style.display = 'block';
+        }
+      }
 
       function checkMeetingEvent() {
         const eventVal = document.getElementById('eventSelect').value.toLowerCase();
@@ -720,11 +780,12 @@ app.get('/', async (req, res) => {
         }
       }
 
-      function editStudent(uid) {
-        const student = registeredStudents.find(s => s.uid === uid);
+      function editStudent(id) {
+        const student = registeredStudents.find(s => s._id === id);
         if (!student) return;
 
-        document.getElementById('uidInput').value = student.uid;
+        document.getElementById('mongoIdInput').value = student._id;
+        document.getElementById('uidInput').value = student.uid || '';
         document.getElementById('studentIdInput').value = student.studentId;
         document.getElementById('nameInput').value = student.name;
         document.getElementById('emailInput').value = student.email || '';
@@ -751,15 +812,15 @@ app.get('/', async (req, res) => {
           checkCustomPosition();
         }
 
-        document.getElementById('formTitle').innerText = 'Edit Participant Details (' + student.name + ')';
+        document.getElementById('formTitle').innerText = 'Edit Details (' + student.name + ')';
         document.getElementById('submitBtn').value = 'Update Participant Record';
         document.getElementById('cancelEditBtn').classList.remove('hidden-field');
-
         document.getElementById('registrationCard').scrollIntoView({ behavior: 'smooth' });
       }
 
       function resetForm() {
         document.getElementById('registerForm').reset();
+        document.getElementById('mongoIdInput').value = '';
         document.getElementById('formTitle').innerText = 'Register / Edit Participant';
         document.getElementById('submitBtn').value = 'Save / Update Participant';
         document.getElementById('cancelEditBtn').classList.add('hidden-field');
@@ -825,10 +886,10 @@ app.get('/', async (req, res) => {
                   <td>\${detailInfo}</td>
                   <td><small>\${contactInfo}</small></td>
                   <td>\${st.assignedEvent || 'General Event'}</td>
-                  <td><code>\${st.uid || 'Pending'}</code></td>
+                  <td>\${st.uid ? '<code>' + st.uid + '</code>' : '<span style="color:#e67e22; font-weight:bold;">No Card Linked</span>'}</td>
                   <td>
-                    <button type="button" class="btn-warning" onclick="editStudent('\${st.uid}')">Edit</button>
-                    <form action="/api/delete-student" method="POST" class="delete-form" onsubmit="return confirm('Remove participant?');">
+                    <button type="button" class="btn-warning" onclick="editStudent('\${st._id}')">Edit / Link Card</button>
+                    <form action="/api/delete-student" method="POST" style="display:inline;" onsubmit="return confirm('Remove participant?');">
                       <input type="hidden" name="id" value="\${st._id}">
                       <button type="submit" class="btn-danger">Delete</button>
                     </form>
@@ -852,174 +913,10 @@ app.get('/', async (req, res) => {
       }
 
       checkMeetingEvent();
-      setInterval(updateDashboard, 2000);
-      updateDashboard();
     </script>
   </body>
   </html>
-  `;
-  res.send(html);
-});
-
-// -------------------------------------------------------------
-// 2. STUDENT REGISTRATION PORTAL ( /student-register )
-// -------------------------------------------------------------
-app.get('/student-register', (req, res) => {
-  res.send(`
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-      <meta charset="UTF-8">
-      <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <title>Student Self-Registration</title>
-      <style>
-        body { font-family: Arial, sans-serif; background: #f4f6f9; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
-        .card { background: white; padding: 30px; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); width: 100%; max-width: 400px; }
-        h2 { text-align: center; color: #2c3e50; margin-bottom: 20px; }
-        label { font-weight: bold; font-size: 14px; color: #34495e; }
-        input { width: 100%; padding: 10px; margin: 8px 0 16px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
-        button { width: 100%; background: #27ae60; color: white; padding: 12px; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; font-size: 16px; }
-        button:hover { background: #219150; }
-        .link { text-align: center; margin-top: 15px; display: block; color: #2980b9; text-decoration: none; }
-      </style>
-    </head>
-    <body>
-      <div class="card">
-        <h2>Student Registration</h2>
-        <form action="/api/register-student" method="POST">
-          <label>ID Number:</label>
-          <input type="text" name="studentId" placeholder="e.g. 2026-1001" required>
-
-          <label>Full Name:</label>
-          <input type="text" name="name" placeholder="Juan Dela Cruz" required>
-
-          <label>Email Address:</label>
-          <input type="email" name="email" placeholder="juan@gmail.com" required>
-
-          <label>Phone Number (Optional):</label>
-          <input type="tel" name="phone" placeholder="09171234567">
-
-          <button type="submit">Submit Registration</button>
-        </form>
-        <a href="/student-portal" class="link">Gusto mo bang i-manage o burahin ang submission mo? Click here</a>
-      </div>
-    </body>
-    </html>
   `);
 });
 
-// -------------------------------------------------------------
-// 3. STUDENT MANAGEMENT & CANCELLATION PORTAL ( /student-portal )
-// -------------------------------------------------------------
-app.get('/student-portal', async (req, res) => {
-  try {
-    const students = await Student.find({}).sort({ _id: -1 });
-
-    res.send(`
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-      <meta charset="UTF-8">
-      <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <title>Student Registration Portal</title>
-      <style>
-        body { font-family: 'Segoe UI', Arial, sans-serif; background: #f4f6f9; margin: 0; padding: 20px; color: #333; }
-        .wrapper { max-width: 900px; margin: 0 auto; }
-        .card { background: white; padding: 25px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
-        h2 { color: #2c3e50; margin-top: 0; border-bottom: 2px solid #ecf0f1; padding-bottom: 10px; }
-        .btn-danger { background: #e74c3c; color: white; border: none; padding: 6px 12px; font-size: 0.85em; border-radius: 4px; cursor: pointer; }
-        .btn-danger:hover { background: #c0392b; }
-        table { width: 100%; border-collapse: collapse; margin-top: 15px; }
-        th, td { border: 1px solid #e1e8ed; padding: 10px; text-align: left; }
-        th { background: #34495e; color: white; }
-        .badge { background: #2980b9; color: white; padding: 3px 8px; border-radius: 4px; font-size: 0.85em; font-weight: bold; }
-        .nav-btn { display: inline-block; margin-bottom: 15px; background: #27ae60; color: white; padding: 10px 15px; border-radius: 4px; text-decoration: none; font-weight: bold; }
-      </style>
-    </head>
-    <body>
-      <div class="wrapper">
-        <a href="/student-register" class="nav-btn">+ Mag-register ng Bago</a>
-        <div class="card">
-          <h2>Submitted Registrations Portal</h2>
-          <p style="font-size: 0.9em; color: #7f8c8d;">Maaari mong burahin o i-cancel ang iyong naisumiteng registration dito kapag may mali.</p>
-          <table>
-            <thead>
-              <tr>
-                <th>ID Number</th>
-                <th>Name</th>
-                <th>Email</th>
-                <th>Position</th>
-                <th>RFID Status</th>
-                <th>Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${students.length === 0 ? '<tr><td colspan="6" style="text-align:center;">Wala pang nakatalang registration.</td></tr>' : ''}
-              ${students.map(s => `
-                <tr>
-                  <td>${s.studentId}</td>
-                  <td><strong>${s.name}</strong></td>
-                  <td>${s.email}</td>
-                  <td><span class="badge">${s.position || 'Officer'}</span></td>
-                  <td>${s.uid ? `<code>${s.uid}</code>` : '<span style="color:#e67e22; font-weight:bold;">Pending Linking</span>'}</td>
-                  <td>
-                    <form action="/api/delete-student" method="POST" style="margin:0;" onsubmit="return confirm('Sigurado ka bang gusto mong burahin ang submission na ito?');">
-                      <input type="hidden" name="id" value="${s._id}">
-                      <button type="submit" class="btn-danger">Delete / Cancel</button>
-                    </form>
-                  </td>
-                </tr>
-              `).join('')}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </body>
-    </html>
-    `);
-  } catch (err) {
-    res.status(500).send('Error loading portal: ' + err.message);
-  }
-});
-
-// Student Self-Registration Endpoint (Automatic Officer Position)
-app.post('/api/register-student', async (req, res) => {
-  try {
-    const { name, email, studentId, phone } = req.body;
-
-    const existing = await Student.findOne({ email });
-    if (existing) {
-      return res.send(`
-        <div style="text-align:center; padding:50px; font-family:Arial;">
-          <h2 style="color:#e74c3c;">May nakarehistro nang ganyang email!</h2>
-          <a href="/student-register">Bumalik sa Registration</a>
-        </div>
-      `);
-    }
-
-    const newStudent = new Student({
-      name,
-      email,
-      studentId,
-      phone: phone || '',
-      position: 'Officer',
-      uid: null
-    });
-
-    await newStudent.save();
-    res.send(`
-      <div style="text-align:center; padding:50px; font-family:Arial;">
-        <h2 style="color:#2ecc71;">Registration Successful!</h2>
-        <p>Nakarehistro na ang iyong impormasyon bilang <strong>Officer</strong>. Pakihintay na ma-assign ng Admin ang iyong RFID Card.</p>
-        <br>
-        <a href="/student-portal" style="color:#2980b9; font-weight:bold;">Pumunta sa Student Portal para tingnan o i-manage ang submission</a>
-      </div>
-    `);
-  } catch (err) {
-    res.status(500).send('Registration Error: ' + err.message);
-  }
-});
-
-app.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
-});
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
