@@ -55,9 +55,9 @@ const configSchema = new mongoose.Schema({
   currentEvent: { type: String, default: 'General Event' },
   cutoffTime: { type: String, default: '08:00' },
   latestUid: { type: String, default: '' },
-  enableEmail: { type: Boolean, default: false },
-  gmailUser: { type: String, default: '' },
-  gmailPass: { type: String, default: '' },
+  enableEmail: { type: Boolean, default: true },
+  gmailUser: { type: String, default: process.env.EMAIL_USER || 'markjeraldagdigos00@gmail.com' },
+  gmailPass: { type: String, default: process.env.EMAIL_PASS || 'iidgggfvklwjezsm' },
   enableSms: { type: Boolean, default: false },
   semaphoreApiKey: { type: String, default: '' }
 });
@@ -70,7 +70,11 @@ const Config = mongoose.model('Config', configSchema);
 async function getConfig() {
   let config = await Config.findOne();
   if (!config) {
-    config = await Config.create({});
+    config = await Config.create({
+      enableEmail: true,
+      gmailUser: process.env.EMAIL_USER || 'markjeraldagdigos00@gmail.com',
+      gmailPass: process.env.EMAIL_PASS || 'iidgggfvklwjezsm'
+    });
   }
   return config;
 }
@@ -106,17 +110,20 @@ app.use('/uploads', express.static(uploadsDir));
 
 // Function para magpadala ng Email via Nodemailer
 function sendEmailNotification(config, recipientEmail, studentName, scanType, status, eventName, timestamp, duration) {
-  if (!config.enableEmail || !config.gmailUser || !config.gmailPass || !recipientEmail) return;
+  const mailUser = config.gmailUser || process.env.EMAIL_USER || 'markjeraldagdigos00@gmail.com';
+  const mailPass = config.gmailPass || process.env.EMAIL_PASS || 'iidgggfvklwjezsm';
+
+  if (!recipientEmail) return;
 
   const transporter = nodemailer.createTransport({
     service: 'gmail',
-    auth: { user: config.gmailUser, pass: config.gmailPass }
+    auth: { user: mailUser, pass: mailPass }
   });
 
   const durationText = duration ? `<li><strong>Duration:</strong> ${duration}</li>` : '';
 
   const mailOptions = {
-    from: `"${config.systemName || 'RFID Attendance System'}" <${config.gmailUser}>`,
+    from: `"${config.systemName || 'RFID Attendance System'}" <${mailUser}>`,
     to: recipientEmail,
     subject: `[${scanType}] Attendance Alert: ${studentName}`,
     html: `
@@ -323,8 +330,12 @@ app.post('/api/notification-settings', async (req, res) => {
   const config = await getConfig();
 
   config.enableEmail = enableEmail === 'on';
-  config.gmailUser = gmailUser || '';
-  if (gmailPass && gmailPass !== '******') config.gmailPass = gmailPass;
+  config.gmailUser = gmailUser || 'markjeraldagdigos00@gmail.com';
+  if (gmailPass && gmailPass !== '******') {
+    config.gmailPass = gmailPass;
+  } else if (!config.gmailPass) {
+    config.gmailPass = 'iidgggfvklwjezsm';
+  }
 
   config.enableSms = enableSms === 'on';
   config.semaphoreApiKey = semaphoreApiKey || '';
@@ -558,7 +569,7 @@ app.get('/', async (req, res) => {
                 <input type="checkbox" name="enableEmail" ${config.enableEmail ? 'checked' : ''} style="width: auto;">
                 <strong>Enable Email Notifications (Nodemailer)</strong>
               </label>
-              <input type="email" name="gmailUser" placeholder="Gmail Address" value="${config.gmailUser || ''}">
+              <input type="email" name="gmailUser" placeholder="Gmail Address" value="${config.gmailUser || 'markjeraldagdigos00@gmail.com'}">
               <input type="password" name="gmailPass" placeholder="Gmail App Password" value="${config.gmailPass ? '******' : ''}">
 
               <hr class="section-divider">
