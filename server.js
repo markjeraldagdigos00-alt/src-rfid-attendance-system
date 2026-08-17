@@ -22,7 +22,7 @@ mongoose.connect(MONGO_URI)
 
 // MONGOOSE SCHEMAS & MODELS
 const studentSchema = new mongoose.Schema({
-  uid: { type: String, required: true, unique: true },
+ uid: { type: String, default: null },
   studentId: { type: String, required: true },
   name: { type: String, required: true },
   yearLevel: { type: String, default: 'Grade 7' },
