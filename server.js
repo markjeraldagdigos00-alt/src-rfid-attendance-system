@@ -8,10 +8,9 @@ const https = require('https');
 const querystring = require('querystring');
 const mongoose = require('mongoose');
 const ExcelJS = require('exceljs');
+const { Resend } = require('resend');
 
 const app = express();
-app.use(express.urlencoded({ extended: true }));
-app.use(express.json());
 const PORT = process.env.PORT || 3000;
 
 // MONGOOSE DATABASE CONNECTION
@@ -25,7 +24,6 @@ mongoose.connect(MONGO_URI)
 async function ensureExcelTemplateExists() {
   const templatePath = path.join(__dirname, 'template.xlsx');
   
-  // Kung may template.xlsx na, huwag nang over-write-in
   if (fs.existsSync(templatePath)) {
     console.log('[EXCEL TEMPLATE] "template.xlsx" already exists.');
     return;
@@ -89,7 +87,7 @@ async function ensureExcelTemplateExists() {
   });
 
   // Add Left Logo (BNHS Logo)
-  let bnhsLogoPath = path.join(__dirname, 'bnhs_logo.jpg');
+  let bnhsLogoPath = path.join(__dirname, 'school_logo');
   if (!fs.existsSync(bnhsLogoPath)) bnhsLogoPath = path.join(__dirname, 'bnhs_logo.png');
 
   if (fs.existsSync(bnhsLogoPath)) {
@@ -105,7 +103,7 @@ async function ensureExcelTemplateExists() {
   }
 
   // Add Right Logo (SRC Logo)
-  const srcLogoPath = path.join(__dirname, 'src_logo.png');
+  const srcLogoPath = path.join(__dirname, 'school_loga');
   if (fs.existsSync(srcLogoPath)) {
     const srcImage = workbook.addImage({
       filename: srcLogoPath,
@@ -200,6 +198,7 @@ const upload = multer({
   }
 });
 
+// MIDDLEWARES
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
   res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
@@ -211,7 +210,6 @@ app.use(bodyParser.urlencoded({ extended: true }));
 app.use('/uploads', express.static(uploadsDir));
 
 // NOTIFICATIONS (EMAIL & SMS)
-const { Resend } = require('resend');
 const resend = new Resend(process.env.RESEND_API_KEY || 'YOUR_RESEND_API_KEY');
 
 async function sendEmailNotification(config, recipientEmail, studentName, scanType, status, eventName, timestamp, duration) {
@@ -360,7 +358,7 @@ app.get('/api/live-data', async (req, res) => {
 // EXPORT TO EXCEL USING CUSTOM TEMPLATE
 app.get('/api/export-excel', async (req, res) => {
   try {
-    await ensureExcelTemplateExists(); // Siguraduhing gawa ang template
+    await ensureExcelTemplateExists();
 
     const selectedEvent = req.query.event;
     let filter = {};
@@ -373,7 +371,7 @@ app.get('/api/export-excel', async (req, res) => {
     await workbook.xlsx.readFile(templatePath);
     const worksheet = workbook.getWorksheet(1);
 
-    let startRow = 6; // Data starts at Row 6
+    let startRow = 6;
 
     attendance.forEach((row, index) => {
       const currentRow = worksheet.getRow(startRow + index);
@@ -1062,6 +1060,7 @@ app.get('/', async (req, res) => {
   `);
 });
 
+// START SERVER
 app.listen(PORT, async () => {
   await ensureExcelTemplateExists();
   console.log(`Server running on port ${PORT}`);
