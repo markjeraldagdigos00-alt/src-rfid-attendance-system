@@ -398,9 +398,7 @@ app.post('/api/clear-logs', async (req, res) => {
   res.redirect('/');
 });
 
-// -------------------------------------------------------------
-// 1. PUBLIC STUDENT REGISTRATION FORM (With Grade 7-12, Section & Position)
-// -------------------------------------------------------------
+// PUBLIC STUDENT REGISTRATION FORM
 app.get('/student-register', (req, res) => {
   res.send(`
     <!DOCTYPE html>
@@ -528,9 +526,7 @@ app.post('/api/register-student', async (req, res) => {
   }
 });
 
-// -------------------------------------------------------------
-// 2. DIRECT ADMIN DASHBOARD ( / )
-// -------------------------------------------------------------
+// DIRECT ADMIN DASHBOARD ( / )
 app.get('/', async (req, res) => {
   const config = await getConfig();
   const eventList = Array.isArray(config.events) ? config.events : ['General Event'];
@@ -666,72 +662,75 @@ app.get('/', async (req, res) => {
           </div>
         </details>
 
-        <div class="card" id="registrationCard">
-          <h2 id="formTitle">Register / Edit Participant</h2>
-          <p>Last Scanned RFID Card UID: <strong id="scannedUid" style="color: #e67e22;">${config.latestUid || 'None'}</strong></p>
+        <details class="settings-card" id="registrationCard">
+          <summary id="formTitle"> Register / Edit Participant </summary>
           
-          <form action="/api/register" method="POST" id="registerForm">
-            <input type="hidden" id="mongoIdInput" name="mongoId">
-
-            <label><strong>RFID Card UID (Pwedeng i-link sa huli):</strong></label>
-            <input type="text" id="uidInput" name="uid" placeholder="RFID Card UID">
+          <div style="margin-top: 15px;">
+            <p style="margin-bottom: 15px;">Last Scanned RFID Card UID: <strong id="scannedUid" style="color: #e67e22;">${config.latestUid || 'None'}</strong></p>
             
-            <label><strong>ID Number:</strong></label>
-            <input type="text" id="studentIdInput" name="studentId" placeholder="ID Number" required>
-            
-            <label><strong>Full Name:</strong></label>
-            <input type="text" id="nameInput" name="name" placeholder="Full Name" required>
+            <form action="/api/register" method="POST" id="registerForm">
+              <input type="hidden" id="mongoIdInput" name="mongoId">
 
-            <div style="display: flex; gap: 10px;">
-              <div style="flex: 1;">
-                <label><strong>Email Address:</strong></label>
-                <input type="email" id="emailInput" name="email" placeholder="e.g. parent@gmail.com">
+              <label><strong>RFID Card UID (Pwedeng i-link sa huli):</strong></label>
+              <input type="text" id="uidInput" name="uid" placeholder="RFID Card UID">
+              
+              <label><strong>ID Number:</strong></label>
+              <input type="text" id="studentIdInput" name="studentId" placeholder="ID Number" required>
+              
+              <label><strong>Full Name:</strong></label>
+              <input type="text" id="nameInput" name="name" placeholder="Full Name" required>
+
+              <div style="display: flex; gap: 10px;">
+                <div style="flex: 1;">
+                  <label><strong>Email Address:</strong></label>
+                  <input type="email" id="emailInput" name="email" placeholder="e.g. parent@gmail.com">
+                </div>
+                <div style="flex: 1;">
+                  <label><strong>Phone Number:</strong></label>
+                  <input type="tel" id="phoneInput" name="phone" placeholder="e.g. 09171234567">
+                </div>
               </div>
-              <div style="flex: 1;">
-                <label><strong>Phone Number:</strong></label>
-                <input type="tel" id="phoneInput" name="phone" placeholder="e.g. 09171234567">
+
+              <label><strong>Assign to Event:</strong></label>
+              <select id="eventSelect" name="assignedEvent" onchange="checkMeetingEvent()">${eventOptions}</select>
+
+              <div id="studentFields" style="display: flex; gap: 10px;">
+                <div style="flex: 1;">
+                  <label><strong>Grade Level:</strong></label>
+                  <select id="yearLevelSelect" name="yearLevel">${gradeOptions}</select>
+                </div>
+                <div style="flex: 1;">
+                  <label><strong>Section:</strong></label>
+                  <input type="text" id="sectionInput" name="section" placeholder="e.g. Diamond / A">
+                </div>
               </div>
-            </div>
 
-            <label><strong>Assign to Event:</strong></label>
-            <select id="eventSelect" name="assignedEvent" onchange="checkMeetingEvent()">${eventOptions}</select>
+              <div id="meetingFields">
+                <label><strong>Position / Role:</strong></label>
+                <select id="positionSelect" name="position" onchange="checkCustomPosition()">
+                  <option value="Officer" selected>Officer</option>
+                  <option value="Member">Member</option>
+                  <option value="President">President</option>
+                  <option value="Vice President">Vice President</option>
+                  <option value="Secretary">Secretary</option>
+                  <option value="Treasurer">Treasurer</option>
+                  <option value="Teacher / Faculty">Teacher / Faculty</option>
+                  <option value="Guest">Guest</option>
+                  <option value="Other">Custom Position...</option>
+                </select>
 
-            <div id="studentFields" style="display: flex; gap: 10px;">
-              <div style="flex: 1;">
-                <label><strong>Grade Level:</strong></label>
-                <select id="yearLevelSelect" name="yearLevel">${gradeOptions}</select>
+                <div id="customPositionBox" class="hidden-field">
+                  <label><strong>Specify Custom Position:</strong></label>
+                  <input type="text" id="customPositionInput" name="customPosition" placeholder="Enter position/role">
+                </div>
               </div>
-              <div style="flex: 1;">
-                <label><strong>Section:</strong></label>
-                <input type="text" id="sectionInput" name="section" placeholder="e.g. Diamond / A">
-              </div>
-            </div>
 
-            <div id="meetingFields">
-              <label><strong>Position / Role:</strong></label>
-              <select id="positionSelect" name="position" onchange="checkCustomPosition()">
-                <option value="Officer" selected>Officer</option>
-                <option value="Member">Member</option>
-                <option value="President">President</option>
-                <option value="Vice President">Vice President</option>
-                <option value="Secretary">Secretary</option>
-                <option value="Treasurer">Treasurer</option>
-                <option value="Teacher / Faculty">Teacher / Faculty</option>
-                <option value="Guest">Guest</option>
-                <option value="Other">Custom Position...</option>
-              </select>
-
-              <div id="customPositionBox" class="hidden-field">
-                <label><strong>Specify Custom Position:</strong></label>
-                <input type="text" id="customPositionInput" name="customPosition" placeholder="Enter position/role">
-              </div>
-            </div>
-
-            <button type="button" class="btn-secondary" onclick="useLatestUid()" style="width: 100%; margin-top: 10px; margin-bottom: 10px;">Link Last Scanned Card UID</button>
-            <input type="submit" id="submitBtn" value="Save / Update Participant" style="width: 100%;">
-            <button type="button" id="cancelEditBtn" onclick="resetForm()" class="btn-danger hidden-field" style="width: 100%; margin-top: 5px;">Cancel Edit</button>
-          </form>
-        </div>
+              <button type="button" class="btn-secondary" onclick="useLatestUid()" style="width: 100%; margin-top: 10px; margin-bottom: 10px;">Link Last Scanned Card UID</button>
+              <input type="submit" id="submitBtn" value="Save / Update Participant" style="width: 100%;">
+              <button type="button" id="cancelEditBtn" onclick="resetForm()" class="btn-danger hidden-field" style="width: 100%; margin-top: 5px;">Cancel Edit</button>
+            </form>
+          </div>
+        </details>
       </div>
 
       <div class="card" style="margin-top: 20px;">
@@ -830,16 +829,19 @@ app.get('/', async (req, res) => {
           checkCustomPosition();
         }
 
-        document.getElementById('formTitle').innerText = 'Edit Details (' + student.name + ')';
+        const regCard = document.getElementById('registrationCard');
+        regCard.open = true;
+
+        document.getElementById('formTitle').innerText = ' Edit Details (' + student.name + ') ';
         document.getElementById('submitBtn').value = 'Update Participant Record';
         document.getElementById('cancelEditBtn').classList.remove('hidden-field');
-        document.getElementById('registrationCard').scrollIntoView({ behavior: 'smooth' });
+        regCard.scrollIntoView({ behavior: 'smooth' });
       }
 
       function resetForm() {
         document.getElementById('registerForm').reset();
         document.getElementById('mongoIdInput').value = '';
-        document.getElementById('formTitle').innerText = 'Register / Edit Participant';
+        document.getElementById('formTitle').innerText = ' Register / Edit Participant ';
         document.getElementById('submitBtn').value = 'Save / Update Participant';
         document.getElementById('cancelEditBtn').classList.add('hidden-field');
       }
