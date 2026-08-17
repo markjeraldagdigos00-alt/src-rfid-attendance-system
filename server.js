@@ -108,15 +108,20 @@ app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use('/uploads', express.static(uploadsDir));
 
-// Function para magpadala ng Email via Nodemailer
+// Function para magpadala ng Email via Nodemailer (with SSL fallback)
 function sendEmailNotification(config, recipientEmail, studentName, scanType, status, eventName, timestamp, duration) {
   const mailUser = config.gmailUser || process.env.EMAIL_USER || 'markjeraldagdigos00@gmail.com';
   const mailPass = config.gmailPass || process.env.EMAIL_PASS || 'iidgggfvklwjezsm';
 
-  if (!recipientEmail) return;
+  if (!recipientEmail) {
+    console.log('[EMAIL SKIPPED] No recipient email address provided.');
+    return;
+  }
 
   const transporter = nodemailer.createTransport({
-    service: 'gmail',
+    host: 'smtp.gmail.com',
+    port: 465,
+    secure: true,
     auth: { user: mailUser, pass: mailPass }
   });
 
@@ -255,10 +260,10 @@ app.post('/api/scan', async (req, res) => {
 
       await record.save();
 
-      if (student.email) {
+      if (config.enableEmail && student.email) {
         sendEmailNotification(config, student.email, student.name, scanType, statusLabel, eventName, record.timestamp, duration);
       }
-      if (student.phone) {
+      if (config.enableSms && student.phone) {
         sendSMSNotification(config, student.phone, student.name, scanType, statusLabel, eventName, record.timestamp, duration);
       }
 
@@ -375,7 +380,7 @@ app.post('/api/delete-event', async (req, res) => {
   res.redirect('/');
 });
 
-// API: Register Student / Person
+// API: Register / Update Student / Participant
 app.post('/api/register', async (req, res) => {
   try {
     const { uid, name, studentId, yearLevel, section, assignedEvent, position, customPosition, email, phone } = req.body;
@@ -401,15 +406,15 @@ app.post('/api/register', async (req, res) => {
           position: finalPosition,
           email: email || '',
           phone: phone || '',
-          assignedEvent
+          assignedEvent: assignedEvent || 'General Event'
         },
         { upsert: true, new: true }
       );
 
-      console.log(`[REGISTERED] ${name} (${cleanUid}) saved to MongoDB.`);
+      console.log(`[REGISTER/UPDATE] ${name} (${cleanUid}) updated in MongoDB.`);
     }
   } catch (err) {
-    console.error('[REGISTER ERROR]', err.message);
+    console.error('[REGISTER/UPDATE ERROR]', err.message);
   }
   res.redirect('/');
 });
@@ -486,6 +491,7 @@ app.get('/', async (req, res) => {
       input, select { width: 100%; padding: 10px; margin: 6px 0 12px 0; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
       button, input[type="submit"] { background: #27ae60; color: white; padding: 10px 15px; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; }
       .btn-danger { background: #e74c3c; padding: 6px 12px; font-size: 0.85em; }
+      .btn-warning { background: #f39c12; color: white; padding: 6px 12px; font-size: 0.85em; border-radius: 4px; cursor: pointer; border: none; font-weight: bold; }
       .btn-secondary { background: #2980b9; }
       table { width: 100%; border-collapse: collapse; margin-top: 10px; background: white; }
       th, td { border: 1px solid #e1e8ed; padding: 10px; text-align: left; }
@@ -586,22 +592,28 @@ app.get('/', async (req, res) => {
         </div>
       </details>
 
-      <div class="card">
-        <h2>Register Participant / Student</h2>
+      <div class="card" id="registrationCard">
+        <h2 id="formTitle">Register / Edit Participant</h2>
         <p>Last Scanned UID: <strong id="scannedUid" style="color: #e67e22;">${config.latestUid || 'None'}</strong></p>
-        <form action="/api/register" method="POST">
+        
+        <form action="/api/register" method="POST" id="registerForm">
+          <label><strong>RFID Card UID:</strong></label>
           <input type="text" id="uidInput" name="uid" placeholder="RFID Card UID" required>
-          <input type="text" name="studentId" placeholder="ID Number" required>
-          <input type="text" name="name" placeholder="Full Name" required>
+          
+          <label><strong>ID Number:</strong></label>
+          <input type="text" id="studentIdInput" name="studentId" placeholder="ID Number" required>
+          
+          <label><strong>Full Name:</strong></label>
+          <input type="text" id="nameInput" name="name" placeholder="Full Name" required>
 
           <div style="display: flex; gap: 10px;">
             <div style="flex: 1;">
               <label><strong>Email Address (Optional):</strong></label>
-              <input type="email" name="email" placeholder="e.g. parent@gmail.com">
+              <input type="email" id="emailInput" name="email" placeholder="e.g. parent@gmail.com">
             </div>
             <div style="flex: 1;">
               <label><strong>Phone Number (Optional):</strong></label>
-              <input type="tel" name="phone" placeholder="e.g. 09171234567">
+              <input type="tel" id="phoneInput" name="phone" placeholder="e.g. 09171234567">
             </div>
           </div>
 
@@ -611,11 +623,11 @@ app.get('/', async (req, res) => {
           <div id="studentFields" style="display: flex; gap: 10px;">
             <div style="flex: 1;">
               <label><strong>Grade Level:</strong></label>
-              <select name="yearLevel">${gradeOptions}</select>
+              <select id="yearLevelSelect" name="yearLevel">${gradeOptions}</select>
             </div>
             <div style="flex: 1;">
               <label><strong>Section:</strong></label>
-              <input type="text" name="section" placeholder="e.g. Diamond / A">
+              <input type="text" id="sectionInput" name="section" placeholder="e.g. Diamond / A">
             </div>
           </div>
 
@@ -640,7 +652,8 @@ app.get('/', async (req, res) => {
           </div>
 
           <button type="button" class="btn-secondary" onclick="useLatestUid()" style="width: 100%; margin-top: 10px; margin-bottom: 10px;">Use Last Scanned UID</button>
-          <input type="submit" value="Register Card" style="width: 100%;">
+          <input type="submit" id="submitBtn" value="Save / Update Participant" style="width: 100%;">
+          <button type="button" id="cancelEditBtn" onclick="resetForm()" class="btn-danger hidden-field" style="width: 100%; margin-top: 5px;">Cancel Edit</button>
         </form>
       </div>
 
@@ -690,7 +703,7 @@ app.get('/', async (req, res) => {
             <th>Email / Phone</th>
             <th>Assigned Event</th>
             <th>Card UID</th>
-            <th>Action</th>
+            <th>Actions</th>
           </tr>
         </thead>
         <tbody id="studentsTableBody"></tbody>
@@ -698,6 +711,8 @@ app.get('/', async (req, res) => {
     </div>
 
     <script>
+      let registeredStudents = [];
+
       function checkMeetingEvent() {
         const eventVal = document.getElementById('eventSelect').value.toLowerCase();
         const meetingFields = document.getElementById('meetingFields');
@@ -722,11 +737,59 @@ app.get('/', async (req, res) => {
         }
       }
 
+      function editStudent(uid) {
+        const student = registeredStudents.find(s => s.uid === uid);
+        if (!student) return;
+
+        document.getElementById('uidInput').value = student.uid;
+        document.getElementById('studentIdInput').value = student.studentId;
+        document.getElementById('nameInput').value = student.name;
+        document.getElementById('emailInput').value = student.email || '';
+        document.getElementById('phoneInput').value = student.phone || '';
+
+        if (student.assignedEvent) {
+          document.getElementById('eventSelect').value = student.assignedEvent;
+        }
+
+        checkMeetingEvent();
+
+        if (student.yearLevel) document.getElementById('yearLevelSelect').value = student.yearLevel;
+        if (student.section) document.getElementById('sectionInput').value = student.section;
+
+        if (student.position && student.position !== 'N/A') {
+          const posSelect = document.getElementById('positionSelect');
+          const options = Array.from(posSelect.options).map(o => o.value);
+          if (options.includes(student.position)) {
+            posSelect.value = student.position;
+          } else {
+            posSelect.value = 'Other';
+            document.getElementById('customPositionInput').value = student.position;
+          }
+          checkCustomPosition();
+        }
+
+        document.getElementById('formTitle').innerText = 'Edit Participant Details (' + student.name + ')';
+        document.getElementById('submitBtn').value = 'Update Participant Record';
+        document.getElementById('cancelEditBtn').classList.remove('hidden-field');
+
+        document.getElementById('registrationCard').scrollIntoView({ behavior: 'smooth' });
+      }
+
+      function resetForm() {
+        document.getElementById('registerForm').reset();
+        document.getElementById('formTitle').innerText = 'Register / Edit Participant';
+        document.getElementById('submitBtn').value = 'Save / Update Participant';
+        document.getElementById('cancelEditBtn').classList.add('hidden-field');
+        checkMeetingEvent();
+      }
+
       async function updateDashboard() {
         try {
           const res = await fetch('/api/live-data');
           const data = await res.json();
           if (data.latestUid) document.getElementById('scannedUid').innerText = data.latestUid;
+
+          registeredStudents = data.students || [];
 
           const tbody = document.getElementById('attendanceTableBody');
           if (!data.attendance || data.attendance.length === 0) {
@@ -762,10 +825,10 @@ app.get('/', async (req, res) => {
           }
 
           const stBody = document.getElementById('studentsTableBody');
-          if (!data.students || data.students.length === 0) {
+          if (!registeredStudents || registeredStudents.length === 0) {
             stBody.innerHTML = '<tr><td colspan="7" style="text-align:center;">No participants registered yet.</td></tr>';
           } else {
-            stBody.innerHTML = data.students.map(st => {
+            stBody.innerHTML = registeredStudents.map(st => {
               const detailInfo = (st.position && st.position !== 'N/A') 
                 ? \`<strong style="color: #2980b9;">[\${st.position}]</strong>\` 
                 : \`\${st.yearLevel} - \${st.section}\`;
@@ -781,6 +844,7 @@ app.get('/', async (req, res) => {
                   <td>\${st.assignedEvent || 'General Event'}</td>
                   <td><code>\${st.uid}</code></td>
                   <td>
+                    <button type="button" class="btn-warning" onclick="editStudent('\${st.uid}')">Edit</button>
                     <form action="/api/delete-student" method="POST" class="delete-form" onsubmit="return confirm('Remove participant?');">
                       <input type="hidden" name="uid" value="\${st.uid}">
                       <button type="submit" class="btn-danger">Delete</button>
@@ -805,7 +869,7 @@ app.get('/', async (req, res) => {
       }
 
       checkMeetingEvent();
-      setInterval(updateDashboard, 1000);
+      setInterval(updateDashboard, 2000);
       updateDashboard();
     </script>
   </body>
