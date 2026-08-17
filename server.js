@@ -918,6 +918,29 @@ app.post('/api/register-student', async (req, res) => {
 // ==========================================
 // PINAKADULO NG FILE (HUWAG GALAWIN):
 // ==========================================
+// API Route para i-link ang na-scan na RFID UID sa Profile ng Estudyante
+app.post('/api/assign-rfid', async (req, res) => {
+  try {
+    const { studentId, uid } = req.body;
+
+    const updatedStudent = await Student.findByIdAndUpdate(
+      studentId,
+      { uid: uid },
+      { new: true }
+    );
+
+    if (!updatedStudent) {
+      return res.status(404).json({ success: false, message: 'Student not found' });
+    }
+
+    res.json({ 
+      success: true, 
+      message: `Successfully linked RFID (${uid}) to ${updatedStudent.name}` 
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
 });
