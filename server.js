@@ -32,6 +32,8 @@ const studentSchema = new mongoose.Schema({
   phone: { type: String, default: '' },
   assignedEvent: { type: String, default: 'General Event' }
 });
+// Ilagay ito sa Line 35:
+const Participant = mongoose.models.Participant || mongoose.model('Student', studentSchema);
 
 const attendanceSchema = new mongoose.Schema({
   uid: String,
