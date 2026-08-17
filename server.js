@@ -87,8 +87,8 @@ async function ensureExcelTemplateExists() {
   });
 
   // Add Left Logo (BNHS Logo)
-  let bnhsLogoPath = path.join(__dirname, 'school_logo');
-  if (!fs.existsSync(bnhsLogoPath)) bnhsLogoPath = path.join(__dirname, 'school_logo');
+  let bnhsLogoPath = path.join(__dirname, 'bnhs_logo.jpg');
+  if (!fs.existsSync(bnhsLogoPath)) bnhsLogoPath = path.join(__dirname, 'bnhs_logo.png');
 
   if (fs.existsSync(bnhsLogoPath)) {
     const ext = path.extname(bnhsLogoPath).toLowerCase() === '.png' ? 'png' : 'jpeg';
@@ -103,7 +103,7 @@ async function ensureExcelTemplateExists() {
   }
 
   // Add Right Logo (SRC Logo)
-  const srcLogoPath = path.join(__dirname, 'school_loga');
+  const srcLogoPath = path.join(__dirname, 'src_logo.png');
   if (fs.existsSync(srcLogoPath)) {
     const srcImage = workbook.addImage({
       filename: srcLogoPath,
