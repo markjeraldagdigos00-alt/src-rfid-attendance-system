@@ -7,6 +7,7 @@ const nodemailer = require('nodemailer');
 const https = require('https');
 const querystring = require('querystring');
 const mongoose = require('mongoose');
+const ExcelJS = require('exceljs');
 
 const app = express();
 app.use(express.urlencoded({ extended: true }));
@@ -19,6 +20,106 @@ const MONGO_URI = process.env.MONGO_URI || 'mongodb+srv://srcadmin:30005BNHS@clu
 mongoose.connect(MONGO_URI)
   .then(() => console.log('[DATABASE] Connected to MongoDB Atlas successfully!'))
   .catch(err => console.error('[DATABASE ERROR] Could not connect to MongoDB:', err.message));
+
+// AUTOMATICALLY GENERATE TEMPLATE.XLSX IF MISSING
+async function ensureExcelTemplateExists() {
+  const templatePath = path.join(__dirname, 'template.xlsx');
+  
+  // Kung may template.xlsx na, huwag nang over-write-in
+  if (fs.existsSync(templatePath)) {
+    console.log('[EXCEL TEMPLATE] "template.xlsx" already exists.');
+    return;
+  }
+
+  console.log('[EXCEL TEMPLATE] Generating "template.xlsx" with BNHS & SRC logos...');
+  
+  const workbook = new ExcelJS.Workbook();
+  const worksheet = workbook.addWorksheet('Attendance Log');
+
+  worksheet.columns = [
+    { key: 'studentId', width: 18 },
+    { key: 'name', width: 28 },
+    { key: 'gradeSection', width: 20 },
+    { key: 'position', width: 18 },
+    { key: 'event', width: 24 },
+    { key: 'scanType', width: 15 },
+    { key: 'status', width: 15 },
+    { key: 'duration', width: 15 },
+    { key: 'timestamp', width: 25 }
+  ];
+
+  // Merge Header Title Area
+  worksheet.mergeCells('C1:G1');
+  worksheet.mergeCells('C2:G2');
+  worksheet.mergeCells('C3:G3');
+
+  worksheet.getCell('C1').value = 'BATAC NATIONAL HIGH SCHOOL';
+  worksheet.getCell('C1').font = { name: 'Segoe UI', size: 16, bold: true, color: { argb: 'FF1B365D' } };
+  worksheet.getCell('C1').alignment = { horizontal: 'center', vertical: 'middle' };
+
+  worksheet.getCell('C2').value = 'SOCIAL REFORMIST CLUB';
+  worksheet.getCell('C2').font = { name: 'Segoe UI', size: 12, bold: true, color: { argb: 'FF444444' } };
+  worksheet.getCell('C2').alignment = { horizontal: 'center', vertical: 'middle' };
+
+  worksheet.getCell('C3').value = 'OFFICIAL ATTENDANCE REPORT LOG';
+  worksheet.getCell('C3').font = { name: 'Segoe UI', size: 10, italic: true, color: { argb: 'FF777777' } };
+  worksheet.getCell('C3').alignment = { horizontal: 'center', vertical: 'middle' };
+
+  // Set Table Row Headers (Row 5)
+  const headers = [
+    'ID NUMBER', 'STUDENT NAME', 'GRADE & SECTION', 
+    'POSITION', 'EVENT NAME', 'SCAN TYPE', 
+    'STATUS', 'DURATION', 'TIMESTAMP'
+  ];
+
+  const headerRow = worksheet.getRow(5);
+  headerRow.values = headers;
+  headerRow.height = 26;
+
+  headerRow.eachCell((cell) => {
+    cell.font = { name: 'Segoe UI', size: 11, bold: true, color: { argb: 'FFFFFFFF' } };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1B365D' } };
+    cell.alignment = { horizontal: 'center', vertical: 'middle' };
+    cell.border = {
+      top: { style: 'thin', color: { argb: 'FFD3D3D3' } },
+      left: { style: 'thin', color: { argb: 'FFD3D3D3' } },
+      bottom: { style: 'thin', color: { argb: 'FFD3D3D3' } },
+      right: { style: 'thin', color: { argb: 'FFD3D3D3' } }
+    };
+  });
+
+  // Add Left Logo (BNHS Logo)
+  let bnhsLogoPath = path.join(__dirname, 'bnhs_logo.jpg');
+  if (!fs.existsSync(bnhsLogoPath)) bnhsLogoPath = path.join(__dirname, 'bnhs_logo.png');
+
+  if (fs.existsSync(bnhsLogoPath)) {
+    const ext = path.extname(bnhsLogoPath).toLowerCase() === '.png' ? 'png' : 'jpeg';
+    const bnhsImage = workbook.addImage({
+      filename: bnhsLogoPath,
+      extension: ext,
+    });
+    worksheet.addImage(bnhsImage, {
+      tl: { col: 0, row: 0 },
+      ext: { width: 70, height: 70 }
+    });
+  }
+
+  // Add Right Logo (SRC Logo)
+  const srcLogoPath = path.join(__dirname, 'src_logo.png');
+  if (fs.existsSync(srcLogoPath)) {
+    const srcImage = workbook.addImage({
+      filename: srcLogoPath,
+      extension: 'png',
+    });
+    worksheet.addImage(srcImage, {
+      tl: { col: 8, row: 0 },
+      ext: { width: 70, height: 70 }
+    });
+  }
+
+  await workbook.xlsx.writeFile(templatePath);
+  console.log('[EXCEL TEMPLATE] "template.xlsx" created successfully!');
+}
 
 // SCHEMAS & MODELS
 const studentSchema = new mongoose.Schema({
@@ -183,13 +284,12 @@ app.post('/api/scan', async (req, res) => {
     if (student) {
       const eventName = student.assignedEvent || config.currentEvent || 'General Event';
       const startOfDay = new Date(now.setHours(0, 0, 0, 0));
-      const endOfDay = new Date(now.setHours(23, 59, 59, 999));
       const scanTime = new Date();
 
       const lastLog = await Attendance.findOne({
         uid: cleanUid,
         event: eventName,
-        rawTimestamp: { $gte: startOfDay, $lte: endOfDay }
+        rawTimestamp: { $gte: startOfDay }
       }).sort({ rawTimestamp: -1 });
 
       let scanType = 'TIME-IN';
@@ -257,7 +357,57 @@ app.get('/api/live-data', async (req, res) => {
   }
 });
 
-// SETTINGS ENDPOINTS
+// EXPORT TO EXCEL USING CUSTOM TEMPLATE
+app.get('/api/export-excel', async (req, res) => {
+  try {
+    await ensureExcelTemplateExists(); // Siguraduhing gawa ang template
+
+    const selectedEvent = req.query.event;
+    let filter = {};
+    if (selectedEvent && selectedEvent !== 'ALL') filter.event = selectedEvent;
+
+    const attendance = await Attendance.find(filter).sort({ rawTimestamp: -1 });
+
+    const templatePath = path.join(__dirname, 'template.xlsx');
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.readFile(templatePath);
+    const worksheet = workbook.getWorksheet(1);
+
+    let startRow = 6; // Data starts at Row 6
+
+    attendance.forEach((row, index) => {
+      const currentRow = worksheet.getRow(startRow + index);
+      
+      currentRow.getCell(1).value = row.studentId;
+      currentRow.getCell(2).value = row.name;
+      currentRow.getCell(3).value = `${row.yearLevel} - ${row.section}`;
+      currentRow.getCell(4).value = row.position || 'Officer';
+      currentRow.getCell(5).value = row.event;
+      currentRow.getCell(6).value = row.scanType || 'TIME-IN';
+      currentRow.getCell(7).value = row.status;
+      currentRow.getCell(8).value = row.duration || 'N/A';
+      currentRow.getCell(9).value = row.timestamp;
+
+      currentRow.commit();
+    });
+
+    const filename = selectedEvent && selectedEvent !== 'ALL' 
+      ? `Attendance_${selectedEvent.replace(/\s+/g, '_')}.xlsx` 
+      : 'Attendance_Report.xlsx';
+
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+
+    await workbook.xlsx.write(res);
+    res.end();
+
+  } catch (err) {
+    console.error('[EXCEL EXPORT ERROR]', err.message);
+    res.status(500).send('Error generating Excel file: ' + err.message);
+  }
+});
+
+// SETTINGS & OTHER ENDPOINTS
 app.post('/api/update-system-name', async (req, res) => {
   const { systemName } = req.body;
   if (systemName) {
@@ -327,7 +477,6 @@ app.post('/api/delete-event', async (req, res) => {
   res.redirect('/');
 });
 
-// ADMIN REGISTER / EDIT PARTICIPANT ENDPOINT
 app.post('/api/register', async (req, res) => {
   try {
     const { mongoId, uid, name, studentId, yearLevel, section, assignedEvent, position, customPosition, email, phone } = req.body;
@@ -370,27 +519,6 @@ app.post('/api/delete-student', async (req, res) => {
   const { id } = req.body;
   if (id) await Student.findByIdAndDelete(id);
   res.redirect('/');
-});
-
-app.get('/api/export-csv', async (req, res) => {
-  const selectedEvent = req.query.event;
-  let filter = {};
-  if (selectedEvent && selectedEvent !== 'ALL') filter.event = selectedEvent;
-
-  const attendance = await Attendance.find(filter).sort({ rawTimestamp: -1 });
-
-  let csv = 'UID,ID Number,Name,Grade Level,Section,Position,Email,Phone,Event,Type,Status,Duration,Timestamp\n';
-  attendance.forEach(row => {
-    csv += `"${row.uid}","${row.studentId}","${row.name}","${row.yearLevel}","${row.section}","${row.position || 'Officer'}","${row.email || ''}","${row.phone || ''}","${row.event}","${row.scanType || 'TIME-IN'}","${row.status}","${row.duration || 'N/A'}","${row.timestamp}"\n`;
-  });
-
-  const filename = selectedEvent && selectedEvent !== 'ALL' 
-    ? `attendance_${selectedEvent.replace(/\s+/g, '_')}.csv` 
-    : 'attendance_all_events.csv';
-
-  res.setHeader('Content-Type', 'text/csv');
-  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-  res.status(200).send(csv);
 });
 
 app.post('/api/clear-logs', async (req, res) => {
@@ -692,7 +820,7 @@ app.get('/', async (req, res) => {
               </div>
 
               <label><strong>Assign to Event:</strong></label>
-              <select id="eventSelect" name="assignedEvent" onchange="checkMeetingEvent()">${eventOptions}</select>
+              <select id="eventSelect" name="assignedEvent">${eventOptions}</select>
 
               <div id="studentFields" style="display: flex; gap: 10px;">
                 <div style="flex: 1;">
@@ -737,12 +865,12 @@ app.get('/', async (req, res) => {
         <h2>Live Attendance Log (Time-In / Time-Out)</h2>
         
         <div style="display: flex; gap: 10px; align-items: center; margin-bottom: 15px;">
-          <label><strong>Export CSV for Event:</strong></label>
+          <label><strong>Export Excel for Event:</strong></label>
           <select id="exportEventSelect" style="width: auto; margin: 0;">
             <option value="ALL">All Events</option>
             ${eventOptions}
           </select>
-          <button type="button" onclick="downloadCSV()">Download CSV</button>
+          <button type="button" onclick="downloadExcel()">Download Excel Template</button>
           <form action="/api/clear-logs" method="POST" style="margin-left: auto;" onsubmit="return confirm('Clear all logs?');">
             <button type="submit" class="btn-danger">Clear All Logs</button>
           </form>
@@ -921,9 +1049,9 @@ app.get('/', async (req, res) => {
         if (uid && uid !== 'None') document.getElementById('uidInput').value = uid;
       }
 
-      function downloadCSV() {
+      function downloadExcel() {
         const selected = document.getElementById('exportEventSelect').value;
-        window.location.href = '/api/export-csv?event=' + encodeURIComponent(selected);
+        window.location.href = '/api/export-excel?event=' + encodeURIComponent(selected);
       }
 
       updateDashboard();
@@ -934,4 +1062,7 @@ app.get('/', async (req, res) => {
   `);
 });
 
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+app.listen(PORT, async () => {
+  await ensureExcelTemplateExists();
+  console.log(`Server running on port ${PORT}`);
+});
