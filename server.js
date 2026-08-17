@@ -7,7 +7,8 @@ const nodemailer = require('nodemailer');
 const https = require('https');
 const querystring = require('querystring');
 const mongoose = require('mongoose');
-
+app.use(express.urlencoded({ extended: true }));
+app.use(express.json());
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -870,7 +871,93 @@ app.get('/', async (req, res) => {
   `;
   res.send(html);
 });
+// ==========================================
+// PASTE MO DITO UNG BAGONG ROUTES
+// ==========================================
 
+// 1. LINK PARA SA STUDENT REGISTRATION (/student)
+app.get('/student', (req, res) => {
+  res.send(`
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>Student Registration Portal</title>
+      <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #eef2f3; padding: 20px; }
+        .card { max-width: 450px; margin: 40px auto; background: white; padding: 30px; border-radius: 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+        h2 { color: #2c3e50; text-align: center; margin-bottom: 5px; }
+        p.subtitle { text-align: center; color: #7f8c8d; font-size: 14px; margin-bottom: 25px; }
+        label { font-weight: 600; color: #34495e; display: block; margin-bottom: 5px; }
+        input { width: 100%; padding: 10px; margin-bottom: 15px; border: 1px solid #ccc; border-radius: 5px; box-sizing: border-box; }
+        button { width: 100%; background: #27ae60; color: white; border: none; padding: 12px; font-size: 16px; font-weight: bold; border-radius: 5px; cursor: pointer; }
+        button:hover { background: #219150; }
+      </style>
+    </head>
+    <body>
+      <div class="card">
+        <h2>Student Registration</h2>
+        <p class="subtitle">Mag-register para sa RFID Attendance System</p>
+        <form action="/api/register-student" method="POST">
+          <label>Full Name</label>
+          <input type="text" name="name" placeholder="Juan Dela Cruz" required>
+          
+          <label>Email Address</label>
+          <input type="email" name="email" placeholder="student@gmail.com" required>
+          
+          <label>Student ID / Course & Section</label>
+          <input type="text" name="studentId" placeholder="2026-00123 / BSIT 3A" required>
+          
+          <button type="submit">Submit Registration</button>
+        </form>
+      </div>
+    </body>
+    </html>
+  `);
+});
+
+// 2. API ENDPOINT NG STUDENT REGISTRATION
+app.post('/api/register-student', async (req, res) => {
+  try {
+    const { name, email, studentId } = req.body;
+
+    const existing = await Participant.findOne({ email });
+    if (existing) {
+      return res.send(`
+        <div style="text-align:center; padding:50px; font-family:Arial;">
+          <h2 style="color:#e74c3c;">May nakarehistro nang ganyang email!</h2>
+          <a href="/student">Bumalik sa Registration</a>
+        </div>
+      `);
+    }
+
+    const newStudent = new Participant({
+      name,
+      email,
+      studentId,
+      rfidUid: null
+    });
+
+    await newStudent.save();
+    res.send(`
+      <div style="text-align:center; padding:50px; font-family:Arial;">
+        <h2 style="color:#2ecc71;">Registration Successful!</h2>
+        <p>Nakarehistro na ang iyong impormasyon. Pakihintay na ma-assign ng Admin ang iyong RFID Card.</p>
+      </div>
+    `);
+  } catch (err) {
+    res.status(500).send('Registration Error: ' + err.message);
+  }
+});
+
+// ==========================================
+// DITO NAGTATAPOS UNG PASTE
+// ==========================================
+
+// ITO UNG NASA PINAKADULO NG SERVER.JS MO (Huwag galawin):
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 app.listen(PORT, () => {
   console.log(`Server running at http://localhost:${PORT}`);
 });
