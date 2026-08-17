@@ -6,34 +6,91 @@ const multer = require('multer');
 const nodemailer = require('nodemailer');
 const https = require('https');
 const querystring = require('querystring');
+const mongoose = require('mongoose');
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
+
+// MONGOOSE DATABASE CONNECTION
+const MONGO_URI = process.env.MONGO_URI || 'mongodb+srv://srcadmin:30005BNHS@cluster0.he7jspr.mongodb.net/scholarhub_db?appName=Cluster0';
+
+mongoose.connect(MONGO_URI)
+  .then(() => console.log('[DATABASE] Connected to MongoDB Atlas successfully!'))
+  .catch(err => console.error('[DATABASE ERROR] Could not connect to MongoDB:', err.message));
+
+// MONGOOSE SCHEMAS & MODELS
+const studentSchema = new mongoose.Schema({
+  uid: { type: String, required: true, unique: true },
+  studentId: { type: String, required: true },
+  name: { type: String, required: true },
+  yearLevel: { type: String, default: 'Grade 7' },
+  section: { type: String, default: 'A' },
+  position: { type: String, default: 'N/A' },
+  email: { type: String, default: '' },
+  phone: { type: String, default: '' },
+  assignedEvent: { type: String, default: 'General Event' }
+});
+
+const attendanceSchema = new mongoose.Schema({
+  uid: String,
+  name: String,
+  studentId: String,
+  yearLevel: String,
+  section: String,
+  position: String,
+  email: String,
+  phone: String,
+  event: String,
+  scanType: String,
+  status: String,
+  duration: String,
+  timestamp: String,
+  rawTimestamp: { type: Date, default: Date.now }
+});
+
+const configSchema = new mongoose.Schema({
+  systemName: { type: String, default: 'RFID Attendance System' },
+  logoPath: { type: String, default: '' },
+  events: { type: [String], default: ['General Event', 'Faculty Meeting', 'Orientation', 'Seminar'] },
+  currentEvent: { type: String, default: 'General Event' },
+  cutoffTime: { type: String, default: '08:00' },
+  latestUid: { type: String, default: '' },
+  enableEmail: { type: Boolean, default: false },
+  gmailUser: { type: String, default: '' },
+  gmailPass: { type: String, default: '' },
+  enableSms: { type: Boolean, default: false },
+  semaphoreApiKey: { type: String, default: '' }
+});
+
+const Student = mongoose.model('Student', studentSchema);
+const Attendance = mongoose.model('Attendance', attendanceSchema);
+const Config = mongoose.model('Config', configSchema);
+
+// Helper para ma-load ang System Config
+async function getConfig() {
+  let config = await Config.findOne();
+  if (!config) {
+    config = await Config.create({});
+  }
+  return config;
+}
 
 // Setup Storage para sa Uploaded Logos
 const uploadsDir = path.join(__dirname, 'uploads');
 if (!fs.existsSync(uploadsDir)) {
-  fs.mkdirSync(uploadsDir);
+  fs.mkdirSync(uploadsDir, { recursive: true });
 }
 
 const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, uploadsDir);
-  },
-  filename: (req, file, cb) => {
-    const ext = path.extname(file.originalname);
-    cb(null, 'school_logo' + ext);
-  }
+  destination: (req, file, cb) => cb(null, uploadsDir),
+  filename: (req, file, cb) => cb(null, 'school_logo' + path.extname(file.originalname))
 });
 
 const upload = multer({ 
   storage,
   fileFilter: (req, file, cb) => {
-    if (file.mimetype.startsWith('image/')) {
-      cb(null, true);
-    } else {
-      cb(new Error('Only image files are allowed!'), false);
-    }
+    if (file.mimetype.startsWith('image/')) cb(null, true);
+    else cb(new Error('Only image files are allowed!'), false);
   }
 });
 
@@ -47,41 +104,13 @@ app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use('/uploads', express.static(uploadsDir));
 
-const STUDENTS_FILE = path.join(__dirname, 'students.json');
-const ATTENDANCE_FILE = path.join(__dirname, 'attendance.json');
-const CONFIG_FILE = path.join(__dirname, 'config.json');
-
-const loadData = (file, fallback) => fs.existsSync(file) ? JSON.parse(fs.readFileSync(file)) : fallback;
-const saveData = (file, data) => fs.writeFileSync(file, JSON.stringify(data, null, 2));
-
-let students = loadData(STUDENTS_FILE, []);
-let attendance = loadData(ATTENDANCE_FILE, []);
-let config = loadData(CONFIG_FILE, { 
-  systemName: 'RFID Attendance System',
-  logoPath: '',
-  events: ['General Event', 'Faculty Meeting', 'Orientation', 'Seminar'], 
-  currentEvent: 'General Event', 
-  cutoffTime: '08:00', 
-  latestUid: '',
-  enableEmail: false,
-  gmailUser: '',
-  gmailPass: '',
-  enableSms: false,
-  semaphoreApiKey: ''
-});
-
-if (!Array.isArray(config.events)) config.events = ['General Event'];
-
 // Function para magpadala ng Email via Nodemailer
-function sendEmailNotification(recipientEmail, studentName, scanType, status, eventName, timestamp, duration) {
+function sendEmailNotification(config, recipientEmail, studentName, scanType, status, eventName, timestamp, duration) {
   if (!config.enableEmail || !config.gmailUser || !config.gmailPass || !recipientEmail) return;
 
   const transporter = nodemailer.createTransport({
     service: 'gmail',
-    auth: {
-      user: config.gmailUser,
-      pass: config.gmailPass
-    }
+    auth: { user: config.gmailUser, pass: config.gmailPass }
   });
 
   const durationText = duration ? `<li><strong>Duration:</strong> ${duration}</li>` : '';
@@ -108,22 +137,17 @@ function sendEmailNotification(recipientEmail, studentName, scanType, status, ev
   };
 
   transporter.sendMail(mailOptions, (error, info) => {
-    if (error) {
-      console.log('[EMAIL ERROR]', error.message);
-    } else {
-      console.log('[EMAIL SENT]', info.response);
-    }
+    if (error) console.log('[EMAIL ERROR]', error.message);
+    else console.log('[EMAIL SENT]', info.response);
   });
 }
 
 // Function para magpadala ng SMS via Semaphore API
-function sendSMSNotification(phoneNumber, studentName, scanType, status, eventName, timestamp, duration) {
+function sendSMSNotification(config, phoneNumber, studentName, scanType, status, eventName, timestamp, duration) {
   if (!config.enableSms || !config.semaphoreApiKey || !phoneNumber) return;
 
   let message = `[Attendance] ${studentName} logged ${scanType} for ${eventName} at ${timestamp}. Status: ${status}.`;
-  if (duration) {
-    message += ` Duration: ${duration}.`;
-  }
+  if (duration) message += ` Duration: ${duration}.`;
 
   const postData = querystring.stringify({
     apikey: config.semaphoreApiKey,
@@ -143,172 +167,177 @@ function sendSMSNotification(phoneNumber, studentName, scanType, status, eventNa
   };
 
   const req = https.request(options, (res) => {
-    res.on('data', (d) => {
-      console.log('[SMS RESPONSE]', d.toString());
-    });
+    res.on('data', (d) => console.log('[SMS RESPONSE]', d.toString()));
   });
 
-  req.on('error', (e) => {
-    console.error('[SMS ERROR]', e.message);
-  });
-
+  req.on('error', (e) => console.error('[SMS ERROR]', e.message));
   req.write(postData);
   req.end();
 }
 
 // Helper: Calculate Time Difference
-function calculateDuration(timeInStr, timeOutStr) {
-  const tIn = new Date(timeInStr);
-  const tOut = new Date(timeOutStr);
-  const diffMs = tOut - tIn;
-
+function calculateDuration(timeInDate, timeOutDate) {
+  const diffMs = timeOutDate - timeInDate;
   if (isNaN(diffMs) || diffMs < 0) return 'N/A';
 
   const totalMinutes = Math.floor(diffMs / (1000 * 60));
   const hours = Math.floor(totalMinutes / 60);
   const mins = totalMinutes % 60;
 
-  if (hours > 0) {
-    return `${hours}h ${mins}m`;
-  }
-  return `${mins}m`;
+  return hours > 0 ? `${hours}h ${mins}m` : `${mins}m`;
 }
 
-// API: ESP8266 RFID Scan (With Auto Time-In / Time-Out Logic)
-app.post('/api/scan', (req, res) => {
-  const { uid } = req.body;
-  if (!uid) return res.status(400).json({ status: 'error', message: 'No UID' });
+// API: ESP8266 RFID Scan (Time-In / Time-Out Logic)
+app.post('/api/scan', async (req, res) => {
+  try {
+    const { uid } = req.body;
+    if (!uid) return res.status(400).json({ status: 'error', message: 'No UID' });
 
-  const cleanUid = uid.trim().toUpperCase();
-  config.latestUid = cleanUid;
-  saveData(CONFIG_FILE, config);
-
-  const student = students.find(s => s.uid.trim().toUpperCase() === cleanUid);
-  const now = new Date();
-  const todayStr = now.toLocaleDateString();
-
-  if (student) {
-    const eventName = student.assignedEvent || config.currentEvent || 'General Event';
-
-    // Hanapin ang pinakabagong scan ngayong araw ng kaparehong estudyante para sa parehong event
-    const todayLogs = attendance.filter(a => 
-      a.uid === cleanUid && 
-      a.event === eventName && 
-      new Date(a.rawTimestamp).toLocaleDateString() === todayStr
-    );
-
-    const lastLog = todayLogs.length > 0 ? todayLogs[todayLogs.length - 1] : null;
-
-    let scanType = 'TIME-IN';
-    let duration = '';
-    let statusLabel = 'ON TIME';
-
-    // Kung nakapag-TIME IN na ngayong araw at wala pang kasunod na TIME OUT -> magiging TIME OUT na ito
-    if (lastLog && lastLog.scanType === 'TIME-IN') {
-      scanType = 'TIME-OUT';
-      statusLabel = 'COMPLETED';
-      duration = calculateDuration(lastLog.rawTimestamp, now.toISOString());
-    } else {
-      // Kung bagong TIME-IN: Check Late Cutoff
-      const currentTimeStr = now.toTimeString().slice(0, 5);
-      const isLate = currentTimeStr > (config.cutoffTime || '08:00');
-      statusLabel = isLate ? 'LATE' : 'ON TIME';
-    }
-
-    const record = {
-      uid: cleanUid,
-      name: student.name,
-      studentId: student.studentId,
-      yearLevel: student.yearLevel || 'N/A',
-      section: student.section || 'N/A',
-      position: student.position || 'N/A',
-      email: student.email || '',
-      phone: student.phone || '',
-      event: eventName,
-      scanType: scanType,
-      status: statusLabel,
-      duration: duration || 'N/A',
-      timestamp: now.toLocaleString(),
-      rawTimestamp: now.toISOString()
-    };
+    const cleanUid = uid.trim().toUpperCase();
+    const config = await getConfig();
     
-    attendance.push(record);
-    saveData(ATTENDANCE_FILE, attendance);
+    config.latestUid = cleanUid;
+    await config.save();
 
-    // Trigger Notifications
-    if (student.email) {
-      sendEmailNotification(student.email, student.name, scanType, statusLabel, eventName, record.timestamp, duration);
-    }
-    if (student.phone) {
-      sendSMSNotification(student.phone, student.name, scanType, statusLabel, eventName, record.timestamp, duration);
-    }
+    const student = await Student.findOne({ uid: cleanUid });
+    const now = new Date();
 
-    console.log(`[SCAN] ${student.name} logged [${scanType}] for ${eventName} [${statusLabel}]`);
-    return res.json({ 
-      status: 'success', 
-      scanType, 
-      isLate: statusLabel === 'LATE', 
-      message: `${scanType} recorded for ${student.name}` 
-    });
-  } else {
-    return res.json({ status: 'unknown', message: 'Card not registered' });
+    if (student) {
+      const eventName = student.assignedEvent || config.currentEvent || 'General Event';
+
+      const startOfDay = new Date(now.setHours(0, 0, 0, 0));
+      const endOfDay = new Date(now.setHours(23, 59, 59, 999));
+      const scanTime = new Date();
+
+      const lastLog = await Attendance.findOne({
+        uid: cleanUid,
+        event: eventName,
+        rawTimestamp: { $gte: startOfDay, $lte: endOfDay }
+      }).sort({ rawTimestamp: -1 });
+
+      let scanType = 'TIME-IN';
+      let duration = '';
+      let statusLabel = 'ON TIME';
+
+      if (lastLog && lastLog.scanType === 'TIME-IN') {
+        scanType = 'TIME-OUT';
+        statusLabel = 'COMPLETED';
+        duration = calculateDuration(new Date(lastLog.rawTimestamp), scanTime);
+      } else {
+        const currentTimeStr = scanTime.toTimeString().slice(0, 5);
+        const isLate = currentTimeStr > (config.cutoffTime || '08:00');
+        statusLabel = isLate ? 'LATE' : 'ON TIME';
+      }
+
+      const record = new Attendance({
+        uid: cleanUid,
+        name: student.name,
+        studentId: student.studentId,
+        yearLevel: student.yearLevel || 'N/A',
+        section: student.section || 'N/A',
+        position: student.position || 'N/A',
+        email: student.email || '',
+        phone: student.phone || '',
+        event: eventName,
+        scanType: scanType,
+        status: statusLabel,
+        duration: duration || 'N/A',
+        timestamp: scanTime.toLocaleString(),
+        rawTimestamp: scanTime
+      });
+
+      await record.save();
+
+      if (student.email) {
+        sendEmailNotification(config, student.email, student.name, scanType, statusLabel, eventName, record.timestamp, duration);
+      }
+      if (student.phone) {
+        sendSMSNotification(config, student.phone, student.name, scanType, statusLabel, eventName, record.timestamp, duration);
+      }
+
+      console.log(`[SCAN] ${student.name} logged [${scanType}] for ${eventName} [${statusLabel}]`);
+      return res.json({ 
+        status: 'success', 
+        scanType, 
+        isLate: statusLabel === 'LATE', 
+        message: `${scanType} recorded for ${student.name}` 
+      });
+    } else {
+      return res.json({ status: 'unknown', message: 'Card not registered' });
+    }
+  } catch (err) {
+    console.error('[SCAN ERROR]', err);
+    res.status(500).json({ status: 'error', message: 'Server Error' });
   }
 });
 
 // API: Realtime Data
-app.get('/api/live-data', (req, res) => {
-  res.json({
-    latestUid: config.latestUid || '',
-    attendance: attendance.slice().reverse(),
-    students: students
-  });
+app.get('/api/live-data', async (req, res) => {
+  try {
+    const config = await getConfig();
+    const students = await Student.find();
+    const attendance = await Attendance.find().sort({ rawTimestamp: -1 });
+
+    res.json({
+      latestUid: config.latestUid || '',
+      attendance: attendance,
+      students: students
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // API: Update System Name
-app.post('/api/update-system-name', (req, res) => {
+app.post('/api/update-system-name', async (req, res) => {
   const { systemName } = req.body;
   if (systemName) {
+    const config = await getConfig();
     config.systemName = systemName;
-    saveData(CONFIG_FILE, config);
+    await config.save();
   }
   res.redirect('/');
 });
 
 // API: Upload Logo
-app.post('/api/upload-logo', upload.single('logoFile'), (req, res) => {
+app.post('/api/upload-logo', upload.single('logoFile'), async (req, res) => {
   if (req.file) {
+    const config = await getConfig();
     config.logoPath = `/uploads/${req.file.filename}?v=${Date.now()}`;
-    saveData(CONFIG_FILE, config);
+    await config.save();
   }
   res.redirect('/');
 });
 
 // API: Remove Logo
-app.post('/api/remove-logo', (req, res) => {
+app.post('/api/remove-logo', async (req, res) => {
+  const config = await getConfig();
   config.logoPath = '';
-  saveData(CONFIG_FILE, config);
+  await config.save();
   res.redirect('/');
 });
 
 // API: Save Notification Config
-app.post('/api/notification-settings', (req, res) => {
+app.post('/api/notification-settings', async (req, res) => {
   const { enableEmail, gmailUser, gmailPass, enableSms, semaphoreApiKey } = req.body;
-  
+  const config = await getConfig();
+
   config.enableEmail = enableEmail === 'on';
   config.gmailUser = gmailUser || '';
   if (gmailPass && gmailPass !== '******') config.gmailPass = gmailPass;
-  
+
   config.enableSms = enableSms === 'on';
   config.semaphoreApiKey = semaphoreApiKey || '';
 
-  saveData(CONFIG_FILE, config);
+  await config.save();
   res.redirect('/');
 });
 
 // API: Update Event & Cutoff Settings
-app.post('/api/event-settings', (req, res) => {
+app.post('/api/event-settings', async (req, res) => {
   const { newEvent, activeEvent, cutoffTime } = req.body;
-  
+  const config = await getConfig();
+
   if (newEvent && !config.events.includes(newEvent)) {
     config.events.push(newEvent);
     config.currentEvent = newEvent;
@@ -317,80 +346,85 @@ app.post('/api/event-settings', (req, res) => {
   }
   if (cutoffTime) config.cutoffTime = cutoffTime;
 
-  saveData(CONFIG_FILE, config);
+  await config.save();
   res.redirect('/');
 });
 
 // API: Delete Event
-app.post('/api/delete-event', (req, res) => {
+app.post('/api/delete-event', async (req, res) => {
   const { eventToDelete } = req.body;
   if (eventToDelete) {
+    const config = await getConfig();
     config.events = config.events.filter(e => e !== eventToDelete);
     if (config.currentEvent === eventToDelete) {
       config.currentEvent = config.events[0] || 'General Event';
     }
-    saveData(CONFIG_FILE, config);
+    await config.save();
   }
   res.redirect('/');
 });
 
 // API: Register Student / Person
-app.post('/api/register', (req, res) => {
-  const { uid, name, studentId, yearLevel, section, assignedEvent, position, customPosition, email, phone } = req.body;
-  if (uid && name && studentId) {
-    const cleanUid = uid.trim().toUpperCase();
-    const existingIndex = students.findIndex(s => s.uid === cleanUid);
-    
-    let finalPosition = 'N/A';
-    if (position === 'Other' && customPosition) {
-      finalPosition = customPosition.trim();
-    } else if (position) {
-      finalPosition = position;
-    }
+app.post('/api/register', async (req, res) => {
+  try {
+    const { uid, name, studentId, yearLevel, section, assignedEvent, position, customPosition, email, phone } = req.body;
 
-    const studentData = { 
-      uid: cleanUid, 
-      name, 
-      studentId, 
-      yearLevel: yearLevel || 'Grade 7', 
-      section: section || 'A', 
-      position: finalPosition,
-      email: email || '',
-      phone: phone || '',
-      assignedEvent 
-    };
+    if (uid && name && studentId) {
+      const cleanUid = uid.trim().toUpperCase();
 
-    if (existingIndex > -1) {
-      students[existingIndex] = studentData;
-    } else {
-      students.push(studentData);
+      let finalPosition = 'N/A';
+      if (position === 'Other' && customPosition) {
+        finalPosition = customPosition.trim();
+      } else if (position) {
+        finalPosition = position;
+      }
+
+      await Student.findOneAndUpdate(
+        { uid: cleanUid },
+        {
+          uid: cleanUid,
+          name,
+          studentId,
+          yearLevel: yearLevel || 'Grade 7',
+          section: section || 'A',
+          position: finalPosition,
+          email: email || '',
+          phone: phone || '',
+          assignedEvent
+        },
+        { upsert: true, new: true }
+      );
+
+      console.log(`[REGISTERED] ${name} (${cleanUid}) saved to MongoDB.`);
     }
-    saveData(STUDENTS_FILE, students);
+  } catch (err) {
+    console.error('[REGISTER ERROR]', err.message);
   }
   res.redirect('/');
 });
 
 // API: Delete Student
-app.post('/api/delete-student', (req, res) => {
+app.post('/api/delete-student', async (req, res) => {
   const { uid } = req.body;
   if (uid) {
-    students = students.filter(s => s.uid !== uid);
-    saveData(STUDENTS_FILE, students);
+    await Student.deleteOne({ uid });
   }
   res.redirect('/');
 });
 
 // API: Export CSV
-app.get('/api/export-csv', (req, res) => {
+app.get('/api/export-csv', async (req, res) => {
   const selectedEvent = req.query.event;
-  let filtered = attendance;
-  
+  let filter = {};
+
   if (selectedEvent && selectedEvent !== 'ALL') {
-    filtered = attendance.filter(a => a.event === selectedEvent);
+    filter.event = selectedEvent;
   }
 
+  const attendance = await Attendance.find(filter).sort({ rawTimestamp: -1 });
+
   let csv = 'UID,ID Number,Name,Grade Level,Section,Position,Email,Phone,Event,Type,Status,Duration,Timestamp\n';
-  filtered.forEach(row => {
+  attendance.forEach(row => {
     csv += `"${row.uid}","${row.studentId}","${row.name}","${row.yearLevel}","${row.section}","${row.position || 'N/A'}","${row.email || ''}","${row.phone || ''}","${row.event}","${row.scanType || 'TIME-IN'}","${row.status}","${row.duration || 'N/A'}","${row.timestamp}"\n`;
   });
 
@@ -404,17 +438,17 @@ app.get('/api/export-csv', (req, res) => {
 });
 
 // API: Clear Logs
-app.post('/api/clear-logs', (req, res) => {
-  attendance = [];
-  saveData(ATTENDANCE_FILE, attendance);
+app.post('/api/clear-logs', async (req, res) => {
+  await Attendance.deleteMany({});
   res.redirect('/');
 });
 
-// Web Dashboard
-app.get('/', (req, res) => {
+// Web Dashboard Interface
+app.get('/', async (req, res) => {
+  const config = await getConfig();
   const eventList = Array.isArray(config.events) ? config.events : ['General Event'];
   const eventOptions = eventList.map(e => `<option value="${e}" ${e === config.currentEvent ? 'selected' : ''}>${e}</option>`).join('');
-  
+
   let gradeOptions = '';
   for (let i = 7; i <= 12; i++) {
     gradeOptions += `<option value="Grade ${i}">Grade ${i}</option>`;
@@ -466,12 +500,10 @@ app.get('/', (req, res) => {
 
     <div class="container">
       
-      <!-- Collapsible System Settings -->
       <details class="settings-card">
         <summary> System, Event & Notification Settings </summary>
         
         <div style="display: flex; flex-wrap: wrap; gap: 20px; margin-top: 10px;">
-          <!-- System Name & Logo -->
           <div style="flex: 1; min-width: 280px;">
             <h3>System Name & Logo</h3>
             <form action="/api/update-system-name" method="POST">
@@ -495,7 +527,6 @@ app.get('/', (req, res) => {
             ` : ''}
           </div>
 
-          <!-- Event Management -->
           <div style="flex: 1; min-width: 280px;">
             <h3>Event Management</h3>
             <form action="/api/event-settings" method="POST">
@@ -520,7 +551,6 @@ app.get('/', (req, res) => {
             </form>
           </div>
 
-          <!-- Notification API Settings -->
           <div style="flex: 1; min-width: 280px;">
             <h3>SMS & Email API Settings</h3>
             <form action="/api/notification-settings" method="POST">
@@ -545,7 +575,6 @@ app.get('/', (req, res) => {
         </div>
       </details>
 
-      <!-- Registration Form -->
       <div class="card">
         <h2>Register Participant / Student</h2>
         <p>Last Scanned UID: <strong id="scannedUid" style="color: #e67e22;">${config.latestUid || 'None'}</strong></p>
@@ -554,7 +583,6 @@ app.get('/', (req, res) => {
           <input type="text" name="studentId" placeholder="ID Number" required>
           <input type="text" name="name" placeholder="Full Name" required>
 
-          <!-- Contact Fields for SMS and Email -->
           <div style="display: flex; gap: 10px;">
             <div style="flex: 1;">
               <label><strong>Email Address (Optional):</strong></label>
@@ -569,7 +597,6 @@ app.get('/', (req, res) => {
           <label><strong>Assign to Event:</strong></label>
           <select id="eventSelect" name="assignedEvent" onchange="checkMeetingEvent()">${eventOptions}</select>
 
-          <!-- Student Grade & Section Fields -->
           <div id="studentFields" style="display: flex; gap: 10px;">
             <div style="flex: 1;">
               <label><strong>Grade Level:</strong></label>
@@ -581,7 +608,6 @@ app.get('/', (req, res) => {
             </div>
           </div>
 
-          <!-- Meeting Position Selector Field -->
           <div id="meetingFields" class="hidden-field">
             <label><strong>Position / Role (For Meeting):</strong></label>
             <select id="positionSelect" name="position" onchange="checkCustomPosition()">
@@ -609,7 +635,6 @@ app.get('/', (req, res) => {
 
     </div>
 
-    <!-- Attendance Logs -->
     <div class="card" style="margin-top: 20px;">
       <h2>Live Attendance Log (Time-In / Time-Out)</h2>
       
@@ -643,7 +668,6 @@ app.get('/', (req, res) => {
       </table>
     </div>
 
-    <!-- Registered Database Table -->
     <div class="card" style="margin-top: 20px;">
       <h2>Registered Participants Database</h2>
       <table>
@@ -693,7 +717,6 @@ app.get('/', (req, res) => {
           const data = await res.json();
           if (data.latestUid) document.getElementById('scannedUid').innerText = data.latestUid;
 
-          // Attendance Table
           const tbody = document.getElementById('attendanceTableBody');
           if (!data.attendance || data.attendance.length === 0) {
             tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;">No attendance records found.</td></tr>';
@@ -727,7 +750,6 @@ app.get('/', (req, res) => {
             }).join('');
           }
 
-          // Database Table
           const stBody = document.getElementById('studentsTableBody');
           if (!data.students || data.students.length === 0) {
             stBody.innerHTML = '<tr><td colspan="7" style="text-align:center;">No participants registered yet.</td></tr>';
