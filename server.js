@@ -14,7 +14,7 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // MONGOOSE DATABASE CONNECTION
-const MONGO_URI = process.env.MONGO_URI || 'mongodb+srv://srcadmin:30005BNHS@cluster0.he7jspr.mongodb.net/scholarhub_db?appName=Cluster0';
+const MONGO_URI = process.env.MONGO_URI || 'mongodb+srv://srcadmin:30005BNHS@cluster0.he7jspr.mongodb.net/school_attendance_db?appName=Cluster0';
 
 mongoose.connect(MONGO_URI)
   .then(() => console.log('[DATABASE] Connected to MongoDB Atlas successfully!'))
@@ -29,16 +29,15 @@ async function ensureExcelTemplateExists() {
     return;
   }
 
-  console.log('[EXCEL TEMPLATE] Generating "template.xlsx" with BNHS & SRC logos...');
+  console.log('[EXCEL TEMPLATE] Generating school attendance "template.xlsx"...');
   
   const workbook = new ExcelJS.Workbook();
-  const worksheet = workbook.addWorksheet('Attendance Log');
+  const worksheet = workbook.addWorksheet('School Attendance Log');
 
   worksheet.columns = [
     { key: 'studentId', width: 18 },
     { key: 'name', width: 28 },
     { key: 'gradeSection', width: 20 },
-    { key: 'position', width: 18 },
     { key: 'event', width: 24 },
     { key: 'scanType', width: 15 },
     { key: 'status', width: 15 },
@@ -47,27 +46,26 @@ async function ensureExcelTemplateExists() {
   ];
 
   // Merge Header Title Area
-  worksheet.mergeCells('C1:G1');
-  worksheet.mergeCells('C2:G2');
-  worksheet.mergeCells('C3:G3');
+  worksheet.mergeCells('B1:G1');
+  worksheet.mergeCells('B2:G2');
+  worksheet.mergeCells('B3:G3');
 
-  worksheet.getCell('C1').value = 'BATAC NATIONAL HIGH SCHOOL';
-  worksheet.getCell('C1').font = { name: 'Segoe UI', size: 16, bold: true, color: { argb: 'FF1B365D' } };
-  worksheet.getCell('C1').alignment = { horizontal: 'center', vertical: 'middle' };
+  worksheet.getCell('B1').value = 'BATAC NATIONAL HIGH SCHOOL';
+  worksheet.getCell('B1').font = { name: 'Segoe UI', size: 16, bold: true, color: { argb: 'FF1B365D' } };
+  worksheet.getCell('B1').alignment = { horizontal: 'center', vertical: 'middle' };
 
-  worksheet.getCell('C2').value = 'SOCIAL REFORMIST CLUB';
-  worksheet.getCell('C2').font = { name: 'Segoe UI', size: 12, bold: true, color: { argb: 'FF444444' } };
-  worksheet.getCell('C2').alignment = { horizontal: 'center', vertical: 'middle' };
+  worksheet.getCell('B2').value = 'OFFICIAL SCHOOL ATTENDANCE SYSTEM';
+  worksheet.getCell('B2').font = { name: 'Segoe UI', size: 12, bold: true, color: { argb: 'FF444444' } };
+  worksheet.getCell('B2').alignment = { horizontal: 'center', vertical: 'middle' };
 
-  worksheet.getCell('C3').value = 'OFFICIAL ATTENDANCE REPORT LOG';
-  worksheet.getCell('C3').font = { name: 'Segoe UI', size: 10, italic: true, color: { argb: 'FF777777' } };
-  worksheet.getCell('C3').alignment = { horizontal: 'center', vertical: 'middle' };
+  worksheet.getCell('B3').value = 'DAILY ATTENDANCE REPORT LOG';
+  worksheet.getCell('B3').font = { name: 'Segoe UI', size: 10, italic: true, color: { argb: 'FF777777' } };
+  worksheet.getCell('B3').alignment = { horizontal: 'center', vertical: 'middle' };
 
   // Set Table Row Headers (Row 5)
   const headers = [
     'ID NUMBER', 'STUDENT NAME', 'GRADE & SECTION', 
-    'POSITION', 'EVENT NAME', 'SCAN TYPE', 
-    'STATUS', 'DURATION', 'TIMESTAMP'
+    'EVENT / SESSION', 'SCAN TYPE', 'STATUS', 'DURATION', 'TIMESTAMP'
   ];
 
   const headerRow = worksheet.getRow(5);
@@ -86,31 +84,15 @@ async function ensureExcelTemplateExists() {
     };
   });
 
-  // Add Left Logo (BNHS Logo)
-  let bnhsLogoPath = path.join(__dirname, 'bnhs_logo.jpg');
-  if (!fs.existsSync(bnhsLogoPath)) bnhsLogoPath = path.join(__dirname, 'bnhs_logo.png');
+  // Add School Logo if available
+  let logoPath = path.join(__dirname, 'bnhs_logo.jpg');
+  if (!fs.existsSync(logoPath)) logoPath = path.join(__dirname, 'bnhs_logo.png');
 
-  if (fs.existsSync(bnhsLogoPath)) {
-    const ext = path.extname(bnhsLogoPath).toLowerCase() === '.png' ? 'png' : 'jpeg';
-    const bnhsImage = workbook.addImage({
-      filename: bnhsLogoPath,
-      extension: ext,
-    });
-    worksheet.addImage(bnhsImage, {
+  if (fs.existsSync(logoPath)) {
+    const ext = path.extname(logoPath).toLowerCase() === '.png' ? 'png' : 'jpeg';
+    const schoolImage = workbook.addImage({ filename: logoPath, extension: ext });
+    worksheet.addImage(schoolImage, {
       tl: { col: 0, row: 0 },
-      ext: { width: 70, height: 70 }
-    });
-  }
-
-  // Add Right Logo (SRC Logo)
-  const srcLogoPath = path.join(__dirname, 'src_logo.png');
-  if (fs.existsSync(srcLogoPath)) {
-    const srcImage = workbook.addImage({
-      filename: srcLogoPath,
-      extension: 'png',
-    });
-    worksheet.addImage(srcImage, {
-      tl: { col: 8, row: 0 },
       ext: { width: 70, height: 70 }
     });
   }
@@ -119,17 +101,17 @@ async function ensureExcelTemplateExists() {
   console.log('[EXCEL TEMPLATE] "template.xlsx" created successfully!');
 }
 
-// SCHEMAS & MODELS
+// SCHEMAS & MODELS (DATABASE CODE)
 const studentSchema = new mongoose.Schema({
   uid: { type: String, default: '' },
   studentId: { type: String, required: true },
   name: { type: String, required: true },
   yearLevel: { type: String, default: 'Grade 7' },
   section: { type: String, default: 'A' },
-  position: { type: String, default: 'Officer' },
+  photo: { type: String, default: '' },
   email: { type: String, default: '' },
   phone: { type: String, default: '' },
-  assignedEvent: { type: String, default: 'General Event' }
+  assignedEvent: { type: String, default: 'Regular Class' }
 });
 
 const attendanceSchema = new mongoose.Schema({
@@ -138,7 +120,7 @@ const attendanceSchema = new mongoose.Schema({
   studentId: String,
   yearLevel: String,
   section: String,
-  position: String,
+  photo: String,
   email: String,
   phone: String,
   event: String,
@@ -150,11 +132,11 @@ const attendanceSchema = new mongoose.Schema({
 });
 
 const configSchema = new mongoose.Schema({
-  systemName: { type: String, default: 'RFID Attendance System' },
+  systemName: { type: String, default: 'School RFID Attendance System' },
   logoPath: { type: String, default: '' },
-  events: { type: [String], default: ['General Event', 'Faculty Meeting', 'Orientation', 'Seminar'] },
-  currentEvent: { type: String, default: 'General Event' },
-  cutoffTime: { type: String, default: '08:00' },
+  events: { type: [String], default: ['Regular Class', 'Morning Assembly', 'Exam Week', 'School Event'] },
+  currentEvent: { type: String, default: 'Regular Class' },
+  cutoffTime: { type: String, default: '07:45' },
   latestUid: { type: String, default: '' },
   enableEmail: { type: Boolean, default: true },
   gmailUser: { type: String, default: process.env.EMAIL_USER || 'markjeraldagdigos00@gmail.com' },
@@ -179,7 +161,7 @@ async function getConfig() {
   return config;
 }
 
-// UPLOADS SETUP FOR SCHOOL LOGO
+// UPLOADS SETUP (LOGOS & STUDENT PHOTOS)
 const uploadsDir = path.join(__dirname, 'uploads');
 if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
@@ -187,7 +169,10 @@ if (!fs.existsSync(uploadsDir)) {
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, uploadsDir),
-  filename: (req, file, cb) => cb(null, 'school_logo' + path.extname(file.originalname))
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    cb(null, file.fieldname === 'logoFile' ? 'school_logo' + path.extname(file.originalname) : 'student_' + uniqueSuffix + path.extname(file.originalname));
+  }
 });
 
 const upload = multer({ 
@@ -212,21 +197,21 @@ app.use('/uploads', express.static(uploadsDir));
 // NOTIFICATIONS (EMAIL & SMS)
 const resend = new Resend(process.env.RESEND_API_KEY || 'YOUR_RESEND_API_KEY');
 
-async function sendEmailNotification(config, recipientEmail, studentName, scanType, status, eventName, timestamp, duration) {
+async function sendEmailNotification(recipientEmail, studentName, scanType, status, eventName, timestamp, duration) {
   if (!recipientEmail) return;
   const durationText = duration ? `<li><strong>Duration:</strong> ${duration}</li>` : '';
   try {
     await resend.emails.send({
-      from: 'RFID System <onboarding@resend.dev>',
+      from: 'School Attendance <onboarding@resend.dev>',
       to: recipientEmail,
-      subject: `[${scanType}] Attendance Alert: ${studentName}`,
+      subject: `[School Attendance] ${scanType} Notice: ${studentName}`,
       html: `
-        <div style="font-family: Arial, sans-serif; padding: 15px; border: 1px solid #ddd; border-radius: 6px;">
-          <h2 style="color: #2c3e50;">Attendance Notification (${scanType})</h2>
-          <p>Hello,</p>
-          <p>This is an automated notification to confirm that <strong>${studentName}</strong> has logged <strong>${scanType}</strong>.</p>
+        <div style="font-family: Arial, sans-serif; padding: 20px; border: 1px solid #e1e8ed; border-radius: 8px;">
+          <h2 style="color: #1b365d;">School Attendance Notification (${scanType})</h2>
+          <p>Dear Parent / Guardian,</p>
+          <p>This is to inform you that <strong>${studentName}</strong> has successfully recorded a <strong>${scanType}</strong>.</p>
           <ul>
-            <li><strong>Event:</strong> ${eventName}</li>
+            <li><strong>Session / Event:</strong> ${eventName}</li>
             <li><strong>Scan Type:</strong> <span style="color:#2980b9; font-weight:bold;">${scanType}</span></li>
             <li><strong>Status:</strong> <span style="color:${status === 'LATE' ? '#e74c3c' : '#2ecc71'}; font-weight:bold;">${status}</span></li>
             <li><strong>Time:</strong> ${timestamp}</li>
@@ -242,7 +227,7 @@ async function sendEmailNotification(config, recipientEmail, studentName, scanTy
 
 function sendSMSNotification(config, phoneNumber, studentName, scanType, status, eventName, timestamp, duration) {
   if (!config.enableSms || !config.semaphoreApiKey || !phoneNumber) return;
-  let message = `[Attendance] ${studentName} logged ${scanType} for ${eventName} at ${timestamp}. Status: ${status}.`;
+  let message = `[School Attendance] ${studentName} logged ${scanType} for ${eventName} at ${timestamp}. Status: ${status}.`;
   if (duration) message += ` Duration: ${duration}.`;
 
   const postData = querystring.stringify({ apikey: config.semaphoreApiKey, number: phoneNumber, message: message });
@@ -268,7 +253,7 @@ function calculateDuration(timeInDate, timeOutDate) {
 app.post('/api/scan', async (req, res) => {
   try {
     const { uid } = req.body;
-    if (!uid) return res.status(400).json({ status: 'error', message: 'No UID' });
+    if (!uid) return res.status(400).json({ status: 'error', message: 'No UID provided' });
 
     const cleanUid = uid.trim().toUpperCase();
     const config = await getConfig();
@@ -280,7 +265,7 @@ app.post('/api/scan', async (req, res) => {
     const now = new Date();
 
     if (student) {
-      const eventName = student.assignedEvent || config.currentEvent || 'General Event';
+      const eventName = student.assignedEvent || config.currentEvent || 'Regular Class';
       const startOfDay = new Date(now.setHours(0, 0, 0, 0));
       const scanTime = new Date();
 
@@ -300,16 +285,16 @@ app.post('/api/scan', async (req, res) => {
         duration = calculateDuration(new Date(lastLog.rawTimestamp), scanTime);
       } else {
         const currentTimeStr = scanTime.toTimeString().slice(0, 5);
-        statusLabel = currentTimeStr > (config.cutoffTime || '08:00') ? 'LATE' : 'ON TIME';
+        statusLabel = currentTimeStr > (config.cutoffTime || '07:45') ? 'LATE' : 'ON TIME';
       }
 
       const record = new Attendance({
         uid: cleanUid,
         name: student.name,
         studentId: student.studentId,
-        yearLevel: student.yearLevel || 'N/A',
-        section: student.section || 'N/A',
-        position: student.position || 'Officer',
+        yearLevel: student.yearLevel || 'Grade 7',
+        section: student.section || 'A',
+        photo: student.photo || '',
         email: student.email || '',
         phone: student.phone || '',
         event: eventName,
@@ -323,15 +308,29 @@ app.post('/api/scan', async (req, res) => {
       await record.save();
 
       if (config.enableEmail && student.email) {
-        sendEmailNotification(config, student.email, student.name, scanType, statusLabel, eventName, record.timestamp, duration);
+        sendEmailNotification(student.email, student.name, scanType, statusLabel, eventName, record.timestamp, duration);
       }
       if (config.enableSms && student.phone) {
         sendSMSNotification(config, student.phone, student.name, scanType, statusLabel, eventName, record.timestamp, duration);
       }
 
-      return res.json({ status: 'success', scanType, isLate: statusLabel === 'LATE', message: `${scanType} recorded for ${student.name}` });
+      return res.json({ 
+        status: 'success', 
+        scanType, 
+        isLate: statusLabel === 'LATE', 
+        student: {
+          name: student.name,
+          studentId: student.studentId,
+          yearLevel: student.yearLevel,
+          section: student.section,
+          photo: student.photo,
+          scanType,
+          status: statusLabel
+        },
+        message: `${scanType} recorded for ${student.name}` 
+      });
     } else {
-      return res.json({ status: 'unknown', message: 'Card not registered' });
+      return res.json({ status: 'unknown', message: 'RFID Card not registered' });
     }
   } catch (err) {
     res.status(500).json({ status: 'error', message: 'Server Error' });
@@ -343,19 +342,19 @@ app.get('/api/live-data', async (req, res) => {
   try {
     const config = await getConfig();
     const students = await Student.find();
-    const attendance = await Attendance.find().sort({ rawTimestamp: -1 });
+    const attendance = await Attendance.find().sort({ rawTimestamp: -1 }).limit(100);
 
     res.json({
       latestUid: config.latestUid || '',
-      attendance: attendance,
-      students: students
+      attendance,
+      students
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// EXPORT TO EXCEL USING CUSTOM TEMPLATE
+// EXPORT TO EXCEL
 app.get('/api/export-excel', async (req, res) => {
   try {
     await ensureExcelTemplateExists();
@@ -379,19 +378,18 @@ app.get('/api/export-excel', async (req, res) => {
       currentRow.getCell(1).value = row.studentId;
       currentRow.getCell(2).value = row.name;
       currentRow.getCell(3).value = `${row.yearLevel} - ${row.section}`;
-      currentRow.getCell(4).value = row.position || 'Officer';
-      currentRow.getCell(5).value = row.event;
-      currentRow.getCell(6).value = row.scanType || 'TIME-IN';
-      currentRow.getCell(7).value = row.status;
-      currentRow.getCell(8).value = row.duration || 'N/A';
-      currentRow.getCell(9).value = row.timestamp;
+      currentRow.getCell(4).value = row.event;
+      currentRow.getCell(5).value = row.scanType || 'TIME-IN';
+      currentRow.getCell(6).value = row.status;
+      currentRow.getCell(7).value = row.duration || 'N/A';
+      currentRow.getCell(8).value = row.timestamp;
 
       currentRow.commit();
     });
 
     const filename = selectedEvent && selectedEvent !== 'ALL' 
-      ? `Attendance_${selectedEvent.replace(/\s+/g, '_')}.xlsx` 
-      : 'Attendance_Report.xlsx';
+      ? `School_Attendance_${selectedEvent.replace(/\s+/g, '_')}.xlsx` 
+      : 'School_Attendance_Report.xlsx';
 
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
@@ -405,7 +403,7 @@ app.get('/api/export-excel', async (req, res) => {
   }
 });
 
-// SETTINGS & OTHER ENDPOINTS
+// SETTINGS & CONFIG ENDPOINTS
 app.post('/api/update-system-name', async (req, res) => {
   const { systemName } = req.body;
   if (systemName) {
@@ -468,31 +466,38 @@ app.post('/api/delete-event', async (req, res) => {
     const config = await getConfig();
     config.events = config.events.filter(e => e !== eventToDelete);
     if (config.currentEvent === eventToDelete) {
-      config.currentEvent = config.events[0] || 'General Event';
+      config.currentEvent = config.events[0] || 'Regular Class';
     }
     await config.save();
   }
   res.redirect('/');
 });
 
-app.post('/api/register', async (req, res) => {
+// STUDENT REGISTRATION / UPDATE WITH PHOTO UPLOAD
+app.post('/api/register', upload.single('photoFile'), async (req, res) => {
   try {
-    const { mongoId, uid, name, studentId, yearLevel, section, assignedEvent, position, customPosition, email, phone } = req.body;
-    let finalPosition = (position === 'Other' && customPosition) ? customPosition.trim() : position || 'Officer';
+    const { mongoId, uid, name, studentId, yearLevel, section, assignedEvent, email, phone } = req.body;
     const cleanUid = uid ? uid.trim().toUpperCase() : '';
+    let photoPath = '';
+
+    if (req.file) {
+      photoPath = `/uploads/${req.file.filename}`;
+    }
 
     if (mongoId) {
-      await Student.findByIdAndUpdate(mongoId, {
-        uid: cleanUid,
-        name,
-        studentId,
-        yearLevel: yearLevel || 'Grade 7',
-        section: section || 'A',
-        position: finalPosition,
-        email: email || '',
-        phone: phone || '',
-        assignedEvent: assignedEvent || 'General Event'
-      });
+      const existingStudent = await Student.findById(mongoId);
+      if (existingStudent) {
+        existingStudent.uid = cleanUid || existingStudent.uid;
+        existingStudent.name = name;
+        existingStudent.studentId = studentId;
+        existingStudent.yearLevel = yearLevel || 'Grade 7';
+        existingStudent.section = section || 'A';
+        if (photoPath) existingStudent.photo = photoPath;
+        existingStudent.email = email || '';
+        existingStudent.phone = phone || '';
+        existingStudent.assignedEvent = assignedEvent || 'Regular Class';
+        await existingStudent.save();
+      }
     } else {
       const newStudent = new Student({
         uid: cleanUid,
@@ -500,15 +505,15 @@ app.post('/api/register', async (req, res) => {
         studentId,
         yearLevel: yearLevel || 'Grade 7',
         section: section || 'A',
-        position: finalPosition,
+        photo: photoPath,
         email: email || '',
         phone: phone || '',
-        assignedEvent: assignedEvent || 'General Event'
+        assignedEvent: assignedEvent || 'Regular Class'
       });
       await newStudent.save();
     }
   } catch (err) {
-    console.error('[SAVE ERROR]', err.message);
+    console.error('[STUDENT SAVE ERROR]', err.message);
   }
   res.redirect('/');
 });
@@ -524,7 +529,7 @@ app.post('/api/clear-logs', async (req, res) => {
   res.redirect('/');
 });
 
-// PUBLIC STUDENT REGISTRATION FORM
+// PUBLIC STUDENT SELF-REGISTRATION PAGE
 app.get('/student-register', (req, res) => {
   res.send(`
     <!DOCTYPE html>
@@ -534,23 +539,22 @@ app.get('/student-register', (req, res) => {
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
       <title>Student Self-Registration</title>
       <style>
-        body { font-family: 'Segoe UI', Arial, sans-serif; background: #f4f6f9; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; padding: 20px 0; }
-        .card { background: white; padding: 30px; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); width: 100%; max-width: 420px; box-sizing: border-box; }
-        h2 { text-align: center; color: #2c3e50; margin-bottom: 20px; }
-        label { font-weight: bold; font-size: 14px; color: #34495e; }
-        input, select { width: 100%; padding: 10px; margin: 6px 0 16px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', Arial, sans-serif; background: #f0f4f8; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; padding: 20px 0; }
+        .card { background: white; padding: 30px; border-radius: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.08); width: 100%; max-width: 440px; box-sizing: border-box; }
+        h2 { text-align: center; color: #1b365d; margin-bottom: 20px; }
+        label { font-weight: 600; font-size: 13px; color: #334155; display: block; margin-top: 10px; }
+        input, select { width: 100%; padding: 10px; margin-top: 5px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box; font-size: 14px; }
         .row { display: flex; gap: 10px; }
         .row > div { flex: 1; }
-        button { width: 100%; background: #27ae60; color: white; padding: 12px; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; font-size: 16px; margin-top: 10px; }
-        button:hover { background: #219150; }
-        .hidden { display: none; }
+        button { width: 100%; background: #2563eb; color: white; padding: 12px; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 15px; margin-top: 20px; transition: background 0.2s; }
+        button:hover { background: #1d4ed8; }
       </style>
     </head>
     <body>
       <div class="card">
-        <h2>Student Registration Form</h2>
-        <form action="/api/register-student" method="POST">
-          <label>ID Number:</label>
+        <h2>Student Registration</h2>
+        <form action="/api/register-student-public" method="POST" enctype="multipart/form-data">
+          <label>Student ID Number:</label>
           <input type="text" name="studentId" placeholder="e.g. 2026-1001" required>
 
           <label>Full Name:</label>
@@ -574,58 +578,31 @@ app.get('/student-register', (req, res) => {
             </div>
           </div>
 
-          <label>Position / Role:</label>
-          <select name="position" id="studentPosSelect" onchange="checkCustomPos()" required>
-            <option value="Officer">Officer</option>
-            <option value="Member">Member</option>
-            <option value="President">President</option>
-            <option value="Vice President">Vice President</option>
-            <option value="Secretary">Secretary</option>
-            <option value="Treasurer">Treasurer</option>
-            <option value="Teacher / Faculty">Teacher / Faculty</option>
-            <option value="Guest">Guest</option>
-            <option value="Other">Custom Position...</option>
-          </select>
+          <label>Student Photo:</label>
+          <input type="file" name="photoFile" accept="image/*" required>
 
-          <div id="customPosBox" class="hidden">
-            <label>Specify Custom Position:</label>
-            <input type="text" name="customPosition" placeholder="Specify position">
-          </div>
+          <label>Parent / Guardian Email:</label>
+          <input type="email" name="email" placeholder="parent@gmail.com" required>
 
-          <label>Email Address:</label>
-          <input type="email" name="email" placeholder="juan@gmail.com" required>
-
-          <label>Phone Number (Optional):</label>
+          <label>Parent / Guardian Phone (Optional):</label>
           <input type="tel" name="phone" placeholder="09171234567">
 
           <button type="submit">Submit Registration</button>
         </form>
       </div>
-
-      <script>
-        function checkCustomPos() {
-          const val = document.getElementById('studentPosSelect').value;
-          const box = document.getElementById('customPosBox');
-          if (val === 'Other') {
-            box.classList.remove('hidden');
-          } else {
-            box.classList.add('hidden');
-          }
-        }
-      </script>
     </body>
     </html>
   `);
 });
 
-app.post('/api/register-student', async (req, res) => {
+app.post('/api/register-student-public', upload.single('photoFile'), async (req, res) => {
   try {
-    const { name, email, studentId, phone, yearLevel, section, position, customPosition } = req.body;
-    let finalPosition = (position === 'Other' && customPosition) ? customPosition.trim() : position || 'Officer';
+    const { name, email, studentId, phone, yearLevel, section } = req.body;
+    let photoPath = req.file ? `/uploads/${req.file.filename}` : '';
 
     const existing = await Student.findOne({ email });
     if (existing) {
-      return res.send(`<div style="text-align:center; padding:50px; font-family:Arial;"><h2 style="color:#e74c3c;">May nakarehistro nang ganyang email!</h2><a href="/student-register">Bumalik sa Form</a></div>`);
+      return res.send(`<div style="text-align:center; padding:50px; font-family:Arial;"><h3 style="color:#e74c3c;">Email is already registered!</h3><a href="/student-register">Go Back</a></div>`);
     }
 
     const newStudent = new Student({
@@ -635,16 +612,16 @@ app.post('/api/register-student', async (req, res) => {
       phone: phone || '',
       yearLevel: yearLevel || 'Grade 7',
       section: section || 'A',
-      position: finalPosition,
+      photo: photoPath,
       uid: ''
     });
 
     await newStudent.save();
     res.send(`
       <div style="text-align:center; padding:50px; font-family:Arial;">
-        <h2 style="color:#2ecc71;">Registration Successful!</h2>
-        <p>Salamat <strong>${name}</strong>! Naisumite na ang iyong impormasyon (${yearLevel} - ${section} | ${finalPosition}). I-a-assign ng Admin ang iyong RFID Card.</p>
-        <a href="/student-register" style="display:inline-block; margin-top:15px; text-decoration:none; color:#2980b9; font-weight:bold;">Mag-register ng iba pa</a>
+        <h2 style="color:#16a34a;">Registration Successful!</h2>
+        <p>Thank you, <strong>${name}</strong> (${yearLevel} - ${section}). Your registration has been submitted. The administrator will link your RFID ID card.</p>
+        <a href="/student-register" style="display:inline-block; margin-top:15px; text-decoration:none; color:#2563eb; font-weight:bold;">Register Another Student</a>
       </div>
     `);
   } catch (err) {
@@ -652,10 +629,10 @@ app.post('/api/register-student', async (req, res) => {
   }
 });
 
-// DIRECT ADMIN DASHBOARD ( / )
+// REDESIGNED ADMIN DASHBOARD ( / )
 app.get('/', async (req, res) => {
   const config = await getConfig();
-  const eventList = Array.isArray(config.events) ? config.events : ['General Event'];
+  const eventList = Array.isArray(config.events) ? config.events : ['Regular Class'];
   const eventOptions = eventList.map(e => `<option value="${e}" ${e === config.currentEvent ? 'selected' : ''}>${e}</option>`).join('');
 
   let gradeOptions = '';
@@ -671,257 +648,277 @@ app.get('/', async (req, res) => {
   <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>${config.systemName || 'RFID Attendance System'}</title>
+    <title>${config.systemName || 'School RFID Attendance System'}</title>
     <style>
-      body { font-family: 'Segoe UI', Tahoma, sans-serif; margin: 20px; background: #f0f2f5; color: #333; }
-      .header-container { display: flex; align-items: center; gap: 15px; margin-bottom: 20px; }
-      .header-logo { height: 65px; width: auto; object-fit: contain; border-radius: 6px; }
-      h1, h2, h3 { color: #1a252f; margin: 0; }
-      .container { display: flex; flex-direction: column; gap: 20px; }
-      .card { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); flex: 1; min-width: 320px; }
-      input, select { width: 100%; padding: 10px; margin: 6px 0 12px 0; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
-      button, input[type="submit"] { background: #27ae60; color: white; padding: 10px 15px; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; }
-      .btn-danger { background: #e74c3c; padding: 6px 12px; font-size: 0.85em; }
-      .btn-warning { background: #f39c12; color: white; padding: 6px 12px; font-size: 0.85em; border-radius: 4px; cursor: pointer; border: none; font-weight: bold; }
-      .btn-secondary { background: #2980b9; }
-      table { width: 100%; border-collapse: collapse; margin-top: 10px; background: white; }
-      th, td { border: 1px solid #e1e8ed; padding: 10px; text-align: left; }
-      th { background: #34495e; color: white; }
-      .badge-ontime { background: #2ecc71; color: white; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 0.85em; }
-      .badge-late { background: #e74c3c; color: white; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 0.85em; }
-      .badge-type-in { background: #3498db; color: white; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 0.85em; }
-      .badge-type-out { background: #9b59b6; color: white; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 0.85em; }
-      .section-divider { border: 0; height: 1px; background: #e1e8ed; margin: 15px 0; }
-      details.settings-card { background: white; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); padding: 15px 20px; }
-      details.settings-card summary { font-size: 1.2em; font-weight: bold; color: #1a252f; cursor: pointer; }
+      :root {
+        --primary: #1b365d;
+        --primary-light: #2563eb;
+        --success: #16a34a;
+        --danger: #dc2626;
+        --warning: #d97706;
+        --bg: #f8fafc;
+        --card-bg: #ffffff;
+        --text: #1e293b;
+        --border: #e2e8f0;
+      }
+      body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 20px; background: var(--bg); color: var(--text); }
+      .header-container { display: flex; align-items: center; gap: 15px; margin-bottom: 20px; background: var(--card-bg); padding: 15px 25px; border-radius: 12px; box-shadow: 0 2px 4px rgba(0,0,0,0.04); }
+      .header-logo { height: 55px; width: auto; object-fit: contain; border-radius: 6px; }
+      h1 { font-size: 1.5rem; color: var(--primary); margin: 0; }
+      .container { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+      @media (max-width: 1024px) { .container { grid-template-columns: 1fr; } }
+      .card { background: var(--card-bg); padding: 20px 25px; border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); margin-bottom: 20px; }
+      input, select { width: 100%; padding: 10px; margin: 6px 0 12px 0; border: 1px solid var(--border); border-radius: 6px; box-sizing: border-box; font-size: 14px; }
+      button, input[type="submit"] { background: var(--primary-light); color: white; padding: 10px 16px; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 14px; transition: opacity 0.2s; }
+      button:hover, input[type="submit"]:hover { opacity: 0.9; }
+      .btn-danger { background: var(--danger); }
+      .btn-warning { background: var(--warning); color: white; }
+      .btn-secondary { background: #475569; }
+      table { width: 100%; border-collapse: collapse; margin-top: 10px; background: white; font-size: 14px; }
+      th, td { border: 1px solid var(--border); padding: 12px; text-align: left; }
+      th { background: #f1f5f9; color: var(--primary); font-weight: 600; }
+      .badge-ontime { background: #dcfce7; color: #166534; padding: 4px 10px; border-radius: 20px; font-weight: 600; font-size: 0.75rem; }
+      .badge-late { background: #fee2e2; color: #991b1b; padding: 4px 10px; border-radius: 20px; font-weight: 600; font-size: 0.75rem; }
+      .badge-type-in { background: #dbeafe; color: #1e40af; padding: 4px 10px; border-radius: 20px; font-weight: 600; font-size: 0.75rem; }
+      .badge-type-out { background: #fae8ff; color: #86198f; padding: 4px 10px; border-radius: 20px; font-weight: 600; font-size: 0.75rem; }
+      .section-divider { border: 0; height: 1px; background: var(--border); margin: 15px 0; }
+      details.settings-card { background: var(--card-bg); border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); padding: 15px 25px; margin-bottom: 20px; }
+      details.settings-card summary { font-size: 1.1rem; font-weight: 600; color: var(--primary); cursor: pointer; }
       .hidden-field { display: none; }
-      .nav-links { margin-bottom: 15px; background: #e8f4f8; padding: 10px 15px; border-radius: 6px; }
-      .nav-links a { font-weight: bold; color: #2980b9; text-decoration: none; }
+      .nav-links { margin-bottom: 20px; background: #eff6ff; padding: 12px 20px; border-radius: 8px; border: 1px solid #bfdbfe; font-size: 14px; }
+      .nav-links a { font-weight: 600; color: var(--primary-light); text-decoration: none; }
+      
+      /* LIVE SCAN POPUP MODAL */
+      #scanModal { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); display: none; justify-content: center; align-items: center; z-index: 1000; backdrop-filter: blur(4px); }
+      .modal-content { background: white; padding: 35px; border-radius: 16px; width: 420px; text-align: center; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.2); animation: popUp 0.3s ease; }
+      @keyframes popUp { 0% { transform: scale(0.8); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
+      .modal-avatar { width: 130px; height: 130px; border-radius: 50%; object-fit: cover; border: 4px solid var(--primary-light); margin: 0 auto 15px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
+      .modal-name { font-size: 1.4rem; font-weight: 700; color: var(--primary); margin: 5px 0; }
+      .modal-details { color: #64748b; font-size: 0.95rem; margin-bottom: 15px; }
+      .modal-status { display: inline-block; padding: 6px 16px; border-radius: 20px; font-weight: 700; font-size: 0.9rem; margin-top: 5px; }
+      .student-thumb { width: 45px; height: 45px; border-radius: 50%; object-fit: cover; border: 2px solid var(--border); }
     </style>
   </head>
   <body>
 
+    <!-- LIVE SCAN POPUP & VOICE ANNOUNCEMENT MODAL -->
+    <div id="scanModal">
+      <div class="modal-content">
+        <img id="modalPhoto" src="" alt="Student Photo" class="modal-avatar" onerror="this.src='https://via.placeholder.com/130?text=No+Photo'">
+        <div id="modalScanTypeBadge" class="badge-type-in" style="font-size:0.85rem; margin-bottom:8px;">TIME-IN</div>
+        <h3 id="modalName" class="modal-name">Student Name</h3>
+        <p id="modalDetails" class="modal-details">Grade 7 - Section A | ID: 2026-0001</p>
+        <div>
+          <span id="modalStatusBadge" class="badge-ontime">ON TIME</span>
+        </div>
+      </div>
+    </div>
+
     <div id="adminContent">
       <div class="header-container">
         ${logoHtml}
-        <h1>${config.systemName || 'RFID Attendance System'}</h1>
+        <h1>${config.systemName || 'School RFID Attendance System'}</h1>
       </div>
 
       <div class="nav-links">
-        <strong>Student Self-Registration Link:</strong>
-        <a href="/student-register" target="_blank">/student-register (Ibigay sa mga Magre-rehistro)</a>
+        <strong>Student Self-Registration Portal:</strong>
+        <a href="/student-register" target="_blank">/student-register (Share this link with students/parents)</a>
       </div>
 
       <div class="container">
         <details class="settings-card">
-          <summary> System, Event & Notification Settings </summary>
+          <summary>System & Event Configuration</summary>
           
-          <div style="display: flex; flex-wrap: wrap; gap: 20px; margin-top: 10px;">
-            <div style="flex: 1; min-width: 280px;">
-              <h3>System Name & Logo</h3>
-              <form action="/api/update-system-name" method="POST">
-                <label><strong>System Name:</strong></label>
-                <input type="text" name="systemName" value="${config.systemName || 'RFID Attendance System'}" required>
-                <input type="submit" value="Save System Name" style="width: 100%;">
-              </form>
+          <div style="margin-top: 15px;">
+            <h3>System Name & Logo</h3>
+            <form action="/api/update-system-name" method="POST">
+              <label><strong>System Title:</strong></label>
+              <input type="text" name="systemName" value="${config.systemName || 'School RFID Attendance System'}" required>
+              <input type="submit" value="Save Title" style="width: 100%;">
+            </form>
 
-              <hr class="section-divider">
+            <hr class="section-divider">
 
-              <form action="/api/upload-logo" method="POST" enctype="multipart/form-data">
-                <label><strong>School Logo Image:</strong></label>
-                <input type="file" name="logoFile" accept="image/*" required>
-                <input type="submit" value="Upload Logo" class="btn-secondary" style="width: 100%; margin-bottom: 10px;">
-              </form>
+            <form action="/api/upload-logo" method="POST" enctype="multipart/form-data">
+              <label><strong>School Logo Image:</strong></label>
+              <input type="file" name="logoFile" accept="image/*" required>
+              <input type="submit" value="Upload School Logo" class="btn-secondary" style="width: 100%; margin-bottom: 10px;">
+            </form>
 
-              ${config.logoPath ? `
-              <form action="/api/remove-logo" method="POST">
-                <button type="submit" class="btn-danger" style="width: 100%;">Remove Logo</button>
-              </form>
-              ` : ''}
-            </div>
-
-            <div style="flex: 1; min-width: 280px;">
-              <h3>Event Management</h3>
-              <form action="/api/event-settings" method="POST">
-                <label><strong>Active Event:</strong></label>
-                <select name="activeEvent">${eventOptions}</select>
-
-                <label><strong>Add New Event Name:</strong></label>
-                <input type="text" name="newEvent" placeholder="e.g. Faculty Meeting / Sports Day">
-
-                <label><strong>Late Cut-off Time (HH:MM):</strong></label>
-                <input type="time" name="cutoffTime" value="${config.cutoffTime || '08:00'}">
-
-                <input type="submit" value="Save Event Settings" style="width: 100%;">
-              </form>
-
-              <hr class="section-divider">
-
-              <h3>Delete Event</h3>
-              <form action="/api/delete-event" method="POST" onsubmit="return confirm('Delete this event?');">
-                <select name="eventToDelete">${eventOptions}</select>
-                <button type="submit" class="btn-danger" style="width: 100%;">Delete Selected Event</button>
-              </form>
-            </div>
-
-            <div style="flex: 1; min-width: 280px;">
-              <h3>SMS & Email API Settings</h3>
-              <form action="/api/notification-settings" method="POST">
-                <label>
-                  <input type="checkbox" name="enableEmail" ${config.enableEmail ? 'checked' : ''} style="width: auto;">
-                  <strong>Enable Email Notifications</strong>
-                </label>
-                <input type="email" name="gmailUser" placeholder="Gmail Address" value="${config.gmailUser || 'markjeraldagdigos00@gmail.com'}">
-                <input type="password" name="gmailPass" placeholder="Gmail App Password" value="${config.gmailPass ? '******' : ''}">
-
-                <hr class="section-divider">
-
-                <label>
-                  <input type="checkbox" name="enableSms" ${config.enableSms ? 'checked' : ''} style="width: auto;">
-                  <strong>Enable SMS Notifications (Semaphore)</strong>
-                </label>
-                <input type="text" name="semaphoreApiKey" placeholder="Semaphore API Key" value="${config.semaphoreApiKey || ''}">
-
-                <input type="submit" value="Save Notification Settings" style="width: 100%; margin-top: 10px;">
-              </form>
-            </div>
+            ${config.logoPath ? `
+            <form action="/api/remove-logo" method="POST">
+              <button type="submit" class="btn-danger" style="width: 100%;">Remove Logo</button>
+            </form>
+            ` : ''}
           </div>
+
+          <hr class="section-divider">
+
+          <h3>Attendance Session Management</h3>
+          <form action="/api/event-settings" method="POST">
+            <label><strong>Active Session / Event:</strong></label>
+            <select name="activeEvent">${eventOptions}</select>
+
+            <label><strong>Add New Session / Event:</strong></label>
+            <input type="text" name="newEvent" placeholder="e.g. Morning Assembly / Midterm Exam">
+
+            <label><strong>Late Cut-off Time (HH:MM):</strong></label>
+            <input type="time" name="cutoffTime" value="${config.cutoffTime || '07:45'}">
+
+            <input type="submit" value="Save Session Settings" style="width: 100%;">
+          </form>
         </details>
 
         <details class="settings-card" id="registrationCard">
-          <summary id="formTitle"> Register / Edit Participant </summary>
+          <summary id="formTitle">Register / Edit Student</summary>
           
           <div style="margin-top: 15px;">
-            <p style="margin-bottom: 15px;">Last Scanned RFID Card UID: <strong id="scannedUid" style="color: #e67e22;">${config.latestUid || 'None'}</strong></p>
+            <p style="margin-bottom: 15px; font-size: 14px;">Last Scanned RFID UID: <strong id="scannedUid" style="color: var(--warning);">${config.latestUid || 'None'}</strong></p>
             
-            <form action="/api/register" method="POST" id="registerForm">
+            <form action="/api/register" method="POST" id="registerForm" enctype="multipart/form-data">
               <input type="hidden" id="mongoIdInput" name="mongoId">
 
-              <label><strong>RFID Card UID (Pwedeng i-link sa huli):</strong></label>
-              <input type="text" id="uidInput" name="uid" placeholder="RFID Card UID">
+              <label><strong>RFID Card UID:</strong></label>
+              <input type="text" id="uidInput" name="uid" placeholder="Scan or enter card UID">
               
-              <label><strong>ID Number:</strong></label>
-              <input type="text" id="studentIdInput" name="studentId" placeholder="ID Number" required>
+              <label><strong>Student ID Number:</strong></label>
+              <input type="text" id="studentIdInput" name="studentId" placeholder="e.g. 2026-1001" required>
               
               <label><strong>Full Name:</strong></label>
-              <input type="text" id="nameInput" name="name" placeholder="Full Name" required>
+              <input type="text" id="nameInput" name="name" placeholder="Juan Dela Cruz" required>
 
               <div style="display: flex; gap: 10px;">
-                <div style="flex: 1;">
-                  <label><strong>Email Address:</strong></label>
-                  <input type="email" id="emailInput" name="email" placeholder="e.g. parent@gmail.com">
-                </div>
-                <div style="flex: 1;">
-                  <label><strong>Phone Number:</strong></label>
-                  <input type="tel" id="phoneInput" name="phone" placeholder="e.g. 09171234567">
-                </div>
-              </div>
-
-              <label><strong>Assign to Event:</strong></label>
-              <select id="eventSelect" name="assignedEvent">${eventOptions}</select>
-
-              <div id="studentFields" style="display: flex; gap: 10px;">
                 <div style="flex: 1;">
                   <label><strong>Grade Level:</strong></label>
                   <select id="yearLevelSelect" name="yearLevel">${gradeOptions}</select>
                 </div>
                 <div style="flex: 1;">
                   <label><strong>Section:</strong></label>
-                  <input type="text" id="sectionInput" name="section" placeholder="e.g. Diamond / A">
+                  <input type="text" id="sectionInput" name="section" placeholder="e.g. Diamond" required>
                 </div>
               </div>
 
-              <div id="meetingFields">
-                <label><strong>Position / Role:</strong></label>
-                <select id="positionSelect" name="position" onchange="checkCustomPosition()">
-                  <option value="Officer" selected>Officer</option>
-                  <option value="Member">Member</option>
-                  <option value="President">President</option>
-                  <option value="Vice President">Vice President</option>
-                  <option value="Secretary">Secretary</option>
-                  <option value="Treasurer">Treasurer</option>
-                  <option value="Teacher / Faculty">Teacher / Faculty</option>
-                  <option value="Guest">Guest</option>
-                  <option value="Other">Custom Position...</option>
-                </select>
+              <label><strong>Student Photo:</strong></label>
+              <input type="file" id="photoFileInput" name="photoFile" accept="image/*">
 
-                <div id="customPositionBox" class="hidden-field">
-                  <label><strong>Specify Custom Position:</strong></label>
-                  <input type="text" id="customPositionInput" name="customPosition" placeholder="Enter position/role">
+              <div style="display: flex; gap: 10px;">
+                <div style="flex: 1;">
+                  <label><strong>Parent Email:</strong></label>
+                  <input type="email" id="emailInput" name="email" placeholder="parent@gmail.com">
+                </div>
+                <div style="flex: 1;">
+                  <label><strong>Parent Phone:</strong></label>
+                  <input type="tel" id="phoneInput" name="phone" placeholder="09171234567">
                 </div>
               </div>
 
-              <button type="button" class="btn-secondary" onclick="useLatestUid()" style="width: 100%; margin-top: 10px; margin-bottom: 10px;">Link Last Scanned Card UID</button>
-              <input type="submit" id="submitBtn" value="Save / Update Participant" style="width: 100%;">
+              <label><strong>Assigned Session / Event:</strong></label>
+              <select id="eventSelect" name="assignedEvent">${eventOptions}</select>
+
+              <button type="button" class="btn-secondary" onclick="useLatestUid()" style="width: 100%; margin-top: 12px; margin-bottom: 10px;">Link Last Scanned Card UID</button>
+              <input type="submit" id="submitBtn" value="Save Student Record" style="width: 100%;">
               <button type="button" id="cancelEditBtn" onclick="resetForm()" class="btn-danger hidden-field" style="width: 100%; margin-top: 5px;">Cancel Edit</button>
             </form>
           </div>
         </details>
       </div>
 
-      <div class="card" style="margin-top: 20px;">
-        <h2>Live Attendance Log (Time-In / Time-Out)</h2>
+      <div class="card">
+        <h2>Live Attendance Log</h2>
         
-        <div style="display: flex; gap: 10px; align-items: center; margin-bottom: 15px;">
-          <label><strong>Export Excel for Event:</strong></label>
+        <div style="display: flex; gap: 10px; align-items: center; margin: 15px 0; flex-wrap: wrap;">
+          <label style="margin: 0;"><strong>Export Excel Report:</strong></label>
           <select id="exportEventSelect" style="width: auto; margin: 0;">
-            <option value="ALL">All Events</option>
+            <option value="ALL">All Sessions</option>
             ${eventOptions}
           </select>
-          <button type="button" onclick="downloadExcel()">Download Excel Template</button>
-          <form action="/api/clear-logs" method="POST" style="margin-left: auto;" onsubmit="return confirm('Clear all logs?');">
+          <button type="button" onclick="downloadExcel()">Download Excel</button>
+          <form action="/api/clear-logs" method="POST" style="margin-left: auto;" onsubmit="return confirm('Clear all attendance logs?');">
             <button type="submit" class="btn-danger">Clear All Logs</button>
           </form>
         </div>
 
-        <table>
-          <thead>
-            <tr>
-              <th>Name</th>
-              <th>ID Number</th>
-              <th>Grade / Position</th>
-              <th>Event</th>
-              <th>Type</th>
-              <th>Status</th>
-              <th>Duration</th>
-              <th>Timestamp</th>
-              <th>UID</th>
-            </tr>
-          </thead>
-          <tbody id="attendanceTableBody"></tbody>
-        </table>
+        <div style="overflow-x: auto;">
+          <table>
+            <thead>
+              <tr>
+                <th>Photo</th>
+                <th>Student Name</th>
+                <th>ID Number</th>
+                <th>Grade & Section</th>
+                <th>Session</th>
+                <th>Scan Type</th>
+                <th>Status</th>
+                <th>Duration</th>
+                <th>Timestamp</th>
+              </tr>
+            </thead>
+            <tbody id="attendanceTableBody"></tbody>
+          </table>
+        </div>
       </div>
 
-      <div class="card" style="margin-top: 20px;">
-        <h2>Registered Participants Database</h2>
-        <table>
-          <thead>
-            <tr>
-              <th>ID Number</th>
-              <th>Name</th>
-              <th>Grade / Section</th>
-              <th>Position</th>
-              <th>Email / Phone</th>
-              <th>Assigned Event</th>
-              <th>Card UID</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody id="studentsTableBody"></tbody>
-        </table>
+      <div class="card">
+        <h2>Registered Students Database</h2>
+        <div style="overflow-x: auto;">
+          <table>
+            <thead>
+              <tr>
+                <th>Photo</th>
+                <th>ID Number</th>
+                <th>Name</th>
+                <th>Grade & Section</th>
+                <th>Parent Contact</th>
+                <th>Session</th>
+                <th>Card UID</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="studentsTableBody"></tbody>
+          </table>
+        </div>
       </div>
     </div>
 
     <script>
       let registeredStudents = [];
+      let lastProcessedAttendanceId = null;
 
-      function checkCustomPosition() {
-        const posVal = document.getElementById('positionSelect').value;
-        const customBox = document.getElementById('customPositionBox');
-        if (posVal === 'Other') {
-          customBox.classList.remove('hidden-field');
-        } else {
-          customBox.classList.add('hidden-field');
+      // Text-to-Speech Announcement & Popup Modal
+      function announceAndShowScan(record) {
+        if (!record) return;
+
+        // 1. Populate Modal Info
+        const photoUrl = record.photo || 'https://via.placeholder.com/130?text=No+Photo';
+        document.getElementById('modalPhoto').src = photoUrl;
+        document.getElementById('modalName').innerText = record.name;
+        document.getElementById('modalDetails').innerText = \`\${record.yearLevel} - \${record.section} | ID: \${record.studentId}\`;
+        
+        const typeBadge = document.getElementById('modalScanTypeBadge');
+        typeBadge.innerText = record.scanType;
+        typeBadge.className = record.scanType === 'TIME-OUT' ? 'badge-type-out' : 'badge-type-in';
+
+        const statusBadge = document.getElementById('modalStatusBadge');
+        statusBadge.innerText = record.status;
+        statusBadge.className = record.status === 'LATE' ? 'badge-late' : 'badge-ontime';
+
+        // Show Modal
+        const modal = document.getElementById('scanModal');
+        modal.style.display = 'flex';
+
+        // Hide after 4 seconds
+        setTimeout(() => {
+          modal.style.display = 'none';
+        }, 4000);
+
+        // 2. Audio Announcement using Web Speech API
+        if ('speechSynthesis' in window) {
+          window.speechSynthesis.cancel(); // Stop any ongoing speech
+          const textToSpeak = \`\${record.scanType} recorded for \${record.name}, \${record.yearLevel} \${record.section}\`;
+          const utterance = new SpeechSynthesisUtterance(textToSpeak);
+          utterance.rate = 1.0;
+          utterance.pitch = 1.0;
+          window.speechSynthesis.speak(utterance);
         }
       }
 
@@ -936,30 +933,15 @@ app.get('/', async (req, res) => {
         document.getElementById('emailInput').value = student.email || '';
         document.getElementById('phoneInput').value = student.phone || '';
 
-        if (student.assignedEvent) {
-          document.getElementById('eventSelect').value = student.assignedEvent;
-        }
-
+        if (student.assignedEvent) document.getElementById('eventSelect').value = student.assignedEvent;
         if (student.yearLevel) document.getElementById('yearLevelSelect').value = student.yearLevel;
         if (student.section) document.getElementById('sectionInput').value = student.section;
-
-        if (student.position) {
-          const posSelect = document.getElementById('positionSelect');
-          const options = Array.from(posSelect.options).map(o => o.value);
-          if (options.includes(student.position)) {
-            posSelect.value = student.position;
-          } else {
-            posSelect.value = 'Other';
-            document.getElementById('customPositionInput').value = student.position;
-          }
-          checkCustomPosition();
-        }
 
         const regCard = document.getElementById('registrationCard');
         regCard.open = true;
 
-        document.getElementById('formTitle').innerText = ' Edit Details (' + student.name + ') ';
-        document.getElementById('submitBtn').value = 'Update Participant Record';
+        document.getElementById('formTitle').innerText = 'Edit Student (' + student.name + ')';
+        document.getElementById('submitBtn').value = 'Update Student Record';
         document.getElementById('cancelEditBtn').classList.remove('hidden-field');
         regCard.scrollIntoView({ behavior: 'smooth' });
       }
@@ -967,8 +949,8 @@ app.get('/', async (req, res) => {
       function resetForm() {
         document.getElementById('registerForm').reset();
         document.getElementById('mongoIdInput').value = '';
-        document.getElementById('formTitle').innerText = ' Register / Edit Participant ';
-        document.getElementById('submitBtn').value = 'Save / Update Participant';
+        document.getElementById('formTitle').innerText = 'Register / Edit Student';
+        document.getElementById('submitBtn').value = 'Save Student Record';
         document.getElementById('cancelEditBtn').classList.add('hidden-field');
       }
 
@@ -980,32 +962,35 @@ app.get('/', async (req, res) => {
 
           registeredStudents = data.students || [];
 
+          // Check for new scan to trigger popup & voice
+          if (data.attendance && data.attendance.length > 0) {
+            const latestLog = data.attendance[0];
+            if (lastProcessedAttendanceId !== latestLog._id) {
+              lastProcessedAttendanceId = latestLog._id;
+              announceAndShowScan(latestLog);
+            }
+          }
+
           const tbody = document.getElementById('attendanceTableBody');
           if (!data.attendance || data.attendance.length === 0) {
             tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;">No attendance records found.</td></tr>';
           } else {
             tbody.innerHTML = data.attendance.map(row => {
-              const detailInfo = \`\${row.yearLevel} - \${row.section} <br><small style="color:#2980b9;">[\${row.position || 'Officer'}]</small>\`;
-
-              const typeBadge = row.scanType === 'TIME-OUT' 
-                ? '<span class="badge-type-out">TIME-OUT</span>' 
-                : '<span class="badge-type-in">TIME-IN</span>';
-
-              const statusBadge = row.status === 'LATE' 
-                ? '<span class="badge-late">LATE</span>' 
-                : '<span class="badge-ontime">' + row.status + '</span>';
+              const photoTag = row.photo ? \`<img src="\${row.photo}" class="student-thumb">\` : '<span style="color:#94a3b8; font-size:12px;">No photo</span>';
+              const typeBadge = row.scanType === 'TIME-OUT' ? '<span class="badge-type-out">TIME-OUT</span>' : '<span class="badge-type-in">TIME-IN</span>';
+              const statusBadge = row.status === 'LATE' ? '<span class="badge-late">LATE</span>' : '<span class="badge-ontime">' + row.status + '</span>';
 
               return \`
                 <tr>
+                  <td>\${photoTag}</td>
                   <td><strong>\${row.name}</strong></td>
                   <td>\${row.studentId}</td>
-                  <td>\${detailInfo}</td>
+                  <td>\${row.yearLevel} - \${row.section}</td>
                   <td>\${row.event}</td>
                   <td>\${typeBadge}</td>
                   <td>\${statusBadge}</td>
                   <td><strong>\${row.duration || 'N/A'}</strong></td>
                   <td>\${row.timestamp}</td>
-                  <td><code>\${row.uid}</code></td>
                 </tr>
               \`;
             }).join('');
@@ -1013,25 +998,26 @@ app.get('/', async (req, res) => {
 
           const stBody = document.getElementById('studentsTableBody');
           if (!registeredStudents || registeredStudents.length === 0) {
-            stBody.innerHTML = '<tr><td colspan="8" style="text-align:center;">No participants registered yet.</td></tr>';
+            stBody.innerHTML = '<tr><td colspan="8" style="text-align:center;">No students registered yet.</td></tr>';
           } else {
             stBody.innerHTML = registeredStudents.map(st => {
+              const photoTag = st.photo ? \`<img src="\${st.photo}" class="student-thumb">\` : '<span style="color:#94a3b8; font-size:12px;">No photo</span>';
               const contactInfo = [st.email, st.phone].filter(Boolean).join('<br>') || '<span style="color:#aaa;">None</span>';
 
               return \`
                 <tr>
+                  <td>\${photoTag}</td>
                   <td>\${st.studentId}</td>
                   <td><strong>\${st.name}</strong></td>
                   <td>\${st.yearLevel || 'N/A'} - \${st.section || 'N/A'}</td>
-                  <td><strong style="color: #2980b9;">\${st.position || 'Officer'}</strong></td>
                   <td><small>\${contactInfo}</small></td>
-                  <td>\${st.assignedEvent || 'General Event'}</td>
-                  <td>\${st.uid ? '<code>' + st.uid + '</code>' : '<span style="color:#e67e22; font-weight:bold;">No Card Linked</span>'}</td>
+                  <td>\${st.assignedEvent || 'Regular Class'}</td>
+                  <td>\${st.uid ? '<code>' + st.uid + '</code>' : '<span style="color:var(--warning); font-weight:bold;">No Card Linked</span>'}</td>
                   <td>
-                    <button type="button" class="btn-warning" onclick="editStudent('\${st._id}')">Edit / Link Card</button>
-                    <form action="/api/delete-student" method="POST" style="display:inline;" onsubmit="return confirm('Remove participant?');">
+                    <button type="button" class="btn-warning" onclick="editStudent('\${st._id}')" style="padding:6px 10px; font-size:12px;">Edit</button>
+                    <form action="/api/delete-student" method="POST" style="display:inline;" onsubmit="return confirm('Remove student record?');">
                       <input type="hidden" name="id" value="\${st._id}">
-                      <button type="submit" class="btn-danger">Delete</button>
+                      <button type="submit" class="btn-danger" style="padding:6px 10px; font-size:12px;">Delete</button>
                     </form>
                   </td>
                 </tr>
@@ -1063,5 +1049,5 @@ app.get('/', async (req, res) => {
 // START SERVER
 app.listen(PORT, async () => {
   await ensureExcelTemplateExists();
-  console.log(`Server running on port ${PORT}`);
+  console.log(`School Attendance Server running on port ${PORT}`);
 });
