@@ -35,7 +35,7 @@ const Daily = model('DailyAttendance', new Schema({
 
 // scanlogs: every single tap (TIME-IN / TIME-OUT, AM / PM)
 const ScanLog = model('ScanLog', new Schema({
-  date: String, time: String, studentId: S, name: S, uid: S, type: S, period: S, status: S,
+  date: String, time: String, studentId: S, name: S, uid: S, action: S, period: S, status: S,
   at: { type: Date, default: Date.now }
 }));
 
@@ -180,7 +180,7 @@ V.daily=attView('Daily Attendance','Everyone who scanned today');
 V.late=attView('Late Students','Arrived after the late time');
 V.absent=attView('Absent Students','No scan today and no excuse on file','absent');
 V.early=attView('Early Out','Left before dismissal','early');
-V.timeinout=async()=>h('Time In / Time Out','Every tap recorded today')+table([['Time',r=>r.time],['Student',r=>\`<b>\${esc(r.name)}</b><br><small>\${esc(r.studentId)}</small>\`],['Action',r=>\`<i class="b \${r.type==='TIME-IN'?'blue':'amber'}">\${r.type}</i>\`],['Period',r=>r.period],['Status',r=>esc(r.status)]],await api('/api/scanlogs?date='+dayAgo(0)));
+V.timeinout=async()=>h('Time In / Time Out','Every tap recorded today')+table([['Time',r=>r.time],['Student',r=>\`<b>\${esc(r.name)}</b><br><small>\${esc(r.studentId)}</small>\`],['Action',r=>\`<i class="b \${r.action==='TIME-IN'?'blue':'amber'}">\${r.action}</i>\`],['Period',r=>r.period],['Status',r=>esc(r.status)]],await api('/api/scanlogs?date='+dayAgo(0)));
 
 // students + cards
 V.students=async()=>{
@@ -365,7 +365,7 @@ function show(s){
 }
 async function poll(){
   try{const s=await (await fetch('/api/last-scan')).json();if(s.status===401||s.error)return location='/login';
-    if(seen===null)seen=s.id;else if(s.id!==seen){seen=s.id;show(s)}}catch(e){}
+    if(seen===null)seen=s.id;else if(s.id!==seen){seen=s.id;show(s)}}catch(e){$('#ann').textContent='⚠ Cannot reach the server - check the connection'}
 }
 async function stats(){try{const s=await (await fetch('/api/stats')).json();$('#cp').textContent=s.present;$('#cl').textContent=s.late;$('#ci').textContent=s.inside}catch(e){}}
 async function boot(){
@@ -476,6 +476,7 @@ app.post('/api/scan', async (req, res) => {
     const { uid } = req.body;
     if (!uid) return res.status(400).json({ status: 'error', message: 'No UID' });
     const cleanUid = uid.trim().toUpperCase();
+    console.log('[SCAN] received UID:', cleanUid);
     const config = await getConfig();
     config.latestUid = cleanUid; config.lastPing = new Date();
     await config.save();
@@ -484,7 +485,8 @@ app.post('/api/scan', async (req, res) => {
     const show = o => { lastScan = { id: lastScan.id + 1, ts: Date.now(), time, uid: cleanUid, ...o }; };
     if (lastScan.uid === cleanUid && Date.now() - lastScan.ts < 4000) return res.json({ status: 'duplicate', message: 'Already scanned' });
 
-    const student = await Student.findOne({ uid: cleanUid }).select('-photoData');
+    const compact = cleanUid.replace(/[\s:-]/g, '');
+    const student = await Student.findOne({ uid: { $in: [cleanUid, compact] } }).select('-photoData');
     if (!student || student.cardStatus !== 'active') {
       const reason = student ? `Card ${student.cardStatus}` : 'Card not registered';
       await Unauthorized.findOneAndUpdate({ uid: cleanUid }, { $inc: { count: 1 }, reason, lastSeen: now }, { upsert: true });
@@ -494,7 +496,7 @@ app.post('/api/scan', async (req, res) => {
     }
 
     const info = { ok: true, studentId: student.studentId, name: student.name, yearLevel: student.yearLevel, section: student.section, photo: student.photo };
-    const rec = await Daily.findOne({ date, uid: cleanUid }) || new Daily({ date, uid: cleanUid, ...info });
+    const rec = await Daily.findOne({ date, studentId: student.studentId }) || new Daily({ date, uid: cleanUid, ...info });
     const period = time >= config.sched.noon ? 'pm' : 'am';
     const slot = SLOTS[period].find(k => !rec[k]);
     if (!slot) {
@@ -508,7 +510,7 @@ app.post('/api/scan', async (req, res) => {
     if (slot === 'amIn' && time > config.sched.late) { rec.late = true; status = 'LATE'; }
     if (slot === 'pmOut' && time < config.sched.dismissal) { rec.earlyOut = true; status = 'EARLY OUT'; }
     await rec.save();
-    await ScanLog.create({ date, time, studentId: student.studentId, name: student.name, uid: cleanUid, type, period: period.toUpperCase(), status });
+    await ScanLog.create({ date, time, studentId: student.studentId, name: student.name, uid: cleanUid, action: type, period: period.toUpperCase(), status });
     if (status === 'LATE' || status === 'EARLY OUT') notify(`${student.name} (${student.yearLevel}-${student.section}) ${status} at ${time}`, 'warning');
     show({ ...info, type, period: period.toUpperCase(), status });
 
@@ -517,7 +519,9 @@ app.post('/api/scan', async (req, res) => {
     sendSMSNotification(config, student.phone, student.name, label, status, time);
     res.json({ status: 'success', scanType: type, isLate: status === 'LATE', message: `${type} recorded for ${student.name}` });
   } catch (err) {
-    res.status(500).json({ status: 'error', message: 'Server Error' });
+    console.error('[SCAN ERROR]', err);
+    lastScan = { id: lastScan.id + 1, ts: Date.now(), time: hm(new Date()), uid: req.body.uid || '', ok: false, message: 'Server error: ' + err.message };
+    res.status(500).json({ status: 'error', message: 'Server Error: ' + err.message });
   }
 });
 
@@ -705,4 +709,5 @@ app.listen(PORT, async () => {
   if (!await D.Grade.countDocuments()) await D.Grade.insertMany([7, 8, 9, 10, 11, 12].map(n => ({ name: 'Grade ' + n })));
   await getConfig();
   console.log(`Server running on port ${PORT}`);
+  console.log('[SCANNER] ESP8266 must POST uid to http://<this-server>/api/scan');
 });
