@@ -24,7 +24,7 @@ const S = { type: String, default: '' };
 const Student = model('Student', new Schema({
   uid: S, studentId: { type: String, required: true }, name: { type: String, required: true },
   yearLevel: { type: String, default: 'Grade 7' }, section: { type: String, default: 'A' },
-  photo: S, email: S, phone: S, cardStatus: { type: String, default: 'active' }
+  photo: S, photoData: Buffer, photoType: S, email: S, phone: S, cardStatus: { type: String, default: 'active' }
 }));
 
 // dailyattendance: one document per student per day (AM in/out + PM in/out)
@@ -145,7 +145,7 @@ const INDEX_HTML = `<!DOCTYPE html>
     <label>Section<input id="s_section" required></label>
     <label>Parent email<input id="s_email" type="email"></label>
     <label>Parent phone<input id="s_phone"></label>
-    <label>Photo<input id="s_photo" type="file" accept="image/*"></label>
+    <label>Photo (max 1 MB)<input id="s_photo" type="file" accept="image/*"></label>
   </div><p style="margin:14px 0 0"><button>Save student</button> <button type="button" class="alt" onclick="lastUid()">Use last scanned card</button> <button type="button" class="danger" onclick="dlg.close()">Cancel</button></p>
 </form></dialog>
 <script>
@@ -330,6 +330,7 @@ aside{width:320px;display:flex;flex-direction:column;gap:16px}
   </div>
   <aside>
     <div class="box"><h3>Today</h3><div class="cnt"><div><b id="cp">0</b>Present</div><div><b id="cl">0</b>Late</div><div><b id="ci">0</b>Inside</div></div></div>
+    <div class="box"><h3>Test without the reader</h3><input id="tu" placeholder="Type a card UID" style="width:100%;padding:8px;border-radius:6px;border:0;margin-bottom:8px"><button onclick="testScan()" style="width:100%;padding:8px;border:0;border-radius:6px;background:#2f6fdb;color:#fff;font-weight:600;cursor:pointer">Scan</button></div>
     <div class="box" style="flex:1;overflow:hidden"><h3>Recent scans</h3><div id="recent"></div></div>
   </aside>
 </div>
@@ -339,7 +340,9 @@ const $=s=>document.querySelector(s);
 let seen=null,voice=false,timer,recent=[],anns=[],ai=0;
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 function begin(){voice=true;$('#start').remove();speak('Scanner ready')}
-function speak(t){if(!voice||!window.speechSynthesis)return;speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(t);u.rate=.95;speechSynthesis.speak(u)}
+function speak(t){if(!voice||!window.speechSynthesis)return;speechSynthesis.cancel();setTimeout(()=>{const u=new SpeechSynthesisUtterance(t);u.rate=.95;speechSynthesis.speak(u)},150)}
+if(window.speechSynthesis)speechSynthesis.getVoices();
+async function testScan(){const u=$('#tu').value.trim();if(u)await fetch('/api/scan',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({uid:u})})}
 setInterval(()=>{const d=new Date();$('#clock').innerHTML=d.toLocaleTimeString('en-US',{timeZone:'Asia/Manila',hour:'2-digit',minute:'2-digit',second:'2-digit'})+'<small>'+d.toLocaleDateString('en-US',{timeZone:'Asia/Manila',weekday:'long',month:'long',day:'numeric'})+'</small>'},1000);
 
 function show(s){
@@ -384,7 +387,10 @@ const mk = name => multer({
   fileFilter: (req, f, cb) => f.mimetype.startsWith('image/') ? cb(null, true) : cb(new Error('Only image files are allowed!'), false)
 });
 const upload = mk(() => 'school_logo');
-const photoUpload = mk(() => 'student_' + Date.now());
+const photoUpload = multer({
+  storage: multer.memoryStorage(), limits: { fileSize: 1e6 },
+  fileFilter: (req, f, cb) => f.mimetype.startsWith('image/') ? cb(null, true) : cb(new Error('Only image files are allowed!'), false)
+});
 
 // MIDDLEWARES + LOGIN (cookie session)
 app.use((req, res, next) => {
@@ -476,9 +482,9 @@ app.post('/api/scan', async (req, res) => {
 
     const now = new Date(), date = ymd(now), time = hm(now);
     const show = o => { lastScan = { id: lastScan.id + 1, ts: Date.now(), time, uid: cleanUid, ...o }; };
-    if (lastScan.uid === cleanUid && Date.now() - lastScan.ts < 15000) return res.json({ status: 'duplicate', message: 'Already scanned' });
+    if (lastScan.uid === cleanUid && Date.now() - lastScan.ts < 4000) return res.json({ status: 'duplicate', message: 'Already scanned' });
 
-    const student = await Student.findOne({ uid: cleanUid });
+    const student = await Student.findOne({ uid: cleanUid }).select('-photoData');
     if (!student || student.cardStatus !== 'active') {
       const reason = student ? `Card ${student.cardStatus}` : 'Card not registered';
       await Unauthorized.findOneAndUpdate({ uid: cleanUid }, { $inc: { count: 1 }, reason, lastSeen: now }, { upsert: true });
@@ -529,7 +535,7 @@ async function attendance({ from, to, q, grade, section, filter }) {
   if (section) sf.section = section;
   if (q) { const rx = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i'); sf.$or = [{ name: rx }, { studentId: rx }]; }
   if (filter === 'absent') {
-    const [students, recs, ex] = await Promise.all([Student.find(sf), Daily.find({ date: day }), Excuse.find({ date: day })]);
+    const [students, recs, ex] = await Promise.all([Student.find(sf).select('-photoData'), Daily.find({ date: day }), Excuse.find({ date: day })]);
     const skip = new Set([...recs.map(r => r.studentId), ...ex.map(e => e.studentId)]);
     return students.filter(s => !skip.has(s.studentId)).map(s => ({ date: day, name: s.name, studentId: s.studentId, yearLevel: s.yearLevel, section: s.section, photo: s.photo, absent: true }));
   }
@@ -600,7 +606,12 @@ Object.entries(lists).forEach(([k, M]) => {
 });
 
 // STUDENTS + RFID CARDS
-app.get('/api/students', async (req, res) => res.json(await Student.find().sort({ name: 1 })));
+app.get('/api/students', async (req, res) => res.json(await Student.find().select('-photoData').sort({ name: 1 })));
+app.get('/photo/:id', async (req, res) => {
+  const s = await Student.findById(req.params.id).select('photoData photoType').catch(() => null);
+  if (!s || !s.photoData) return res.sendStatus(404);
+  res.type(s.photoType).send(s.photoData);
+});
 
 app.post('/api/register', photoUpload.single('photo'), async (req, res) => {
   try {
@@ -608,8 +619,8 @@ app.post('/api/register', photoUpload.single('photo'), async (req, res) => {
     const cleanUid = (uid || '').trim().toUpperCase();
     if (cleanUid && await Student.findOne({ uid: cleanUid, _id: { $ne: mongoId || undefined } })) return res.status(409).json({ error: 'That RFID card is already assigned' });
     const d = { uid: cleanUid, name, studentId, yearLevel: yearLevel || 'Grade 7', section: section || 'A', email: email || '', phone: phone || '' };
-    if (req.file) d.photo = '/uploads/' + req.file.filename;
-    mongoId ? await Student.findByIdAndUpdate(mongoId, d) : await Student.create(d);
+    const st = mongoId ? await Student.findByIdAndUpdate(mongoId, d) : await Student.create(d);
+    if (req.file) await Student.findByIdAndUpdate(st?._id || mongoId, { photoData: req.file.buffer, photoType: req.file.mimetype, photo: `/photo/${st?._id || mongoId}?v=${Date.now()}` });
     log(`Saved student ${name}`); res.json({ ok: true });
   } catch (err) { res.status(400).json({ error: err.message }); }
 });
