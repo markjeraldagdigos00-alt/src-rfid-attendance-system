@@ -315,13 +315,14 @@ aside{width:320px;display:flex;flex-direction:column;gap:16px}
 .cnt{display:flex;gap:10px}.cnt div{flex:1;font-size:13px;color:#9fb3c8}.cnt b{display:block;font-size:34px;color:#fff}
 #recent div{padding:7px 0;border-bottom:1px solid #1d3a55;font-size:14px;display:flex;justify-content:space-between;gap:8px}
 #ann{padding:12px 32px;background:#12263a;font-size:18px;color:#cfe3f5;min-height:48px}
-#start{position:fixed;inset:0;background:#0d1b2af2;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:16px;z-index:9;font-size:22px}
-#start button{font:inherit;font-weight:800;padding:16px 40px;border:0;border-radius:12px;background:#1f8a5b;color:#fff;cursor:pointer}
+#start{position:fixed;right:16px;bottom:64px;z-index:9;display:flex;align-items:center;gap:10px;background:#12263a;border:2px solid #1f8a5b;padding:10px 16px;border-radius:12px;font-size:16px}
+#start button{font:inherit;font-weight:800;padding:8px 18px;border:0;border-radius:8px;background:#1f8a5b;color:#fff;cursor:pointer}
+#net{position:fixed;left:16px;bottom:64px;font-size:13px;color:#9fb3c8}
 @media(max-width:900px){aside{display:none}#card{flex-direction:column;gap:20px}#photo{width:50vw}}
 </style>
 </head>
 <body>
-<div id="start"><div>Tap to start the scanner and turn on voice</div><button onclick="begin()">Start scanner</button></div>
+<div id="start">🔊 Voice is off <button onclick="begin()">Turn on voice</button></div><div id="net">Connecting…</div>
 <header><img id="logo" hidden><h1 id="school">School Attendance</h1><div id="clock"></div></header>
 <div class="wrap">
   <div id="stage">
@@ -339,7 +340,8 @@ aside{width:320px;display:flex;flex-direction:column;gap:16px}
 const $=s=>document.querySelector(s);
 let seen=null,voice=false,timer,recent=[],anns=[],ai=0;
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-function begin(){voice=true;$('#start').remove();speak('Scanner ready')}
+function begin(){if(voice)return;voice=true;$('#start')?.remove();speak('Voice is on')}
+addEventListener('click',begin);addEventListener('keydown',begin);
 function speak(t){if(!voice||!window.speechSynthesis)return;speechSynthesis.cancel();setTimeout(()=>{const u=new SpeechSynthesisUtterance(t);u.rate=.95;speechSynthesis.speak(u)},150)}
 if(window.speechSynthesis)speechSynthesis.getVoices();
 async function testScan(){const u=$('#tu').value.trim();if(u)await fetch('/api/scan',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({uid:u})})}
@@ -365,7 +367,8 @@ function show(s){
 }
 async function poll(){
   try{const s=await (await fetch('/api/last-scan')).json();if(s.status===401||s.error)return location='/login';
-    if(seen===null)seen=s.id;else if(s.id!==seen){seen=s.id;show(s)}}catch(e){$('#ann').textContent='⚠ Cannot reach the server - check the connection'}
+    $('#net').textContent='● Connected · last card received: '+(s.uid||'none yet');
+    if(seen===null)seen=s.id;else if(s.id!==seen){seen=s.id;show(s)}}catch(e){$('#net').textContent='○ Cannot reach the server'}
 }
 async function stats(){try{const s=await (await fetch('/api/stats')).json();$('#cp').textContent=s.present;$('#cl').textContent=s.late;$('#ci').textContent=s.inside}catch(e){}}
 async function boot(){
@@ -469,6 +472,7 @@ function sendSMSNotification(config, phoneNumber, studentName, label, status, ti
 let lastScan = { id: 0 };
 const SLOTS = { am: ['amIn', 'amOut'], pm: ['pmIn', 'pmOut'] };
 
+app.get('/api/scan', (req, res) => res.send('Scan endpoint is online. The ESP8266 must POST uid to this address.'));
 app.post('/api/ping', async (req, res) => { await Config.updateOne({}, { lastPing: new Date() }); res.json({ status: 'ok' }); });
 
 app.post('/api/scan', async (req, res) => {
@@ -497,7 +501,8 @@ app.post('/api/scan', async (req, res) => {
 
     const info = { ok: true, studentId: student.studentId, name: student.name, yearLevel: student.yearLevel, section: student.section, photo: student.photo };
     const rec = await Daily.findOne({ date, studentId: student.studentId }) || new Daily({ date, uid: cleanUid, ...info });
-    const period = time >= config.sched.noon ? 'pm' : 'am';
+    const sc = { opening: '06:00', late: '07:30', noon: '12:00', dismissal: '16:00', ...JSON.parse(JSON.stringify(config.sched || {})) };
+    const period = time >= sc.noon ? 'pm' : 'am';
     const slot = SLOTS[period].find(k => !rec[k]);
     if (!slot) {
       show({ ...info, type: 'DONE', period: period.toUpperCase(), status: 'Already completed' });
@@ -507,12 +512,14 @@ app.post('/api/scan', async (req, res) => {
     rec[slot] = time;
     const type = slot.endsWith('In') ? 'TIME-IN' : 'TIME-OUT';
     let status = type === 'TIME-IN' ? 'ON TIME' : 'COMPLETED';
-    if (slot === 'amIn' && time > config.sched.late) { rec.late = true; status = 'LATE'; }
-    if (slot === 'pmOut' && time < config.sched.dismissal) { rec.earlyOut = true; status = 'EARLY OUT'; }
+    if (slot === 'amIn' && time > sc.late) { rec.late = true; status = 'LATE'; }
+    if (slot === 'pmOut' && time < sc.dismissal) { rec.earlyOut = true; status = 'EARLY OUT'; }
     await rec.save();
-    await ScanLog.create({ date, time, studentId: student.studentId, name: student.name, uid: cleanUid, action: type, period: period.toUpperCase(), status });
-    if (status === 'LATE' || status === 'EARLY OUT') notify(`${student.name} (${student.yearLevel}-${student.section}) ${status} at ${time}`, 'warning');
     show({ ...info, type, period: period.toUpperCase(), status });
+    try {
+      await ScanLog.create({ date, time, studentId: student.studentId, name: student.name, uid: cleanUid, action: type, period: period.toUpperCase(), status });
+      if (status === 'LATE' || status === 'EARLY OUT') notify(`${student.name} (${student.yearLevel}-${student.section}) ${status} at ${time}`, 'warning');
+    } catch (e) { console.error('[SCANLOG ERROR]', e.message); }
 
     const label = `${type} (${period.toUpperCase()})`;
     if (config.enableEmail) sendEmailNotification(config, student.email, student.name, label, status, time);
