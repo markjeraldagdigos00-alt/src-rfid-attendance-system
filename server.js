@@ -60,7 +60,7 @@ const Config = model('Config', new Schema({
     opening: { type: String, default: '06:00' }, late: { type: String, default: '07:30' },
     noon: { type: String, default: '12:00' }, dismissal: { type: String, default: '16:00' }
   },
-  latestUid: S, lastPing: Date,
+  latestUid: S, lastPing: Date, lastScan: Object,
   adminUser: { type: String, default: 'admin' },
   adminPass: { type: String, default: require('crypto').createHash('sha256').update('admin123').digest('hex') },
   enableEmail: { type: Boolean, default: true }, enableSms: { type: Boolean, default: false }, semaphoreApiKey: S
@@ -276,6 +276,7 @@ async function go(k){
 async function init(){
   GR=await api('/api/grades');const c=await api('/api/config');
   $('#nav').innerHTML=\`<div class="brand">\${c.logoPath?\`<img src="\${c.logoPath}">\`:'🎓'}<span>\${esc(c.school.name)}</span></div>\`+MENU.map(m=>\`<a data-k="\${m[0]}" href="\${m[3]||'#'+m[0]}" \${m[0]==='scanner'?'target="_blank"':''}>\${m[1]} \${m[2]}</a>\`).join('');
+  document.querySelectorAll('nav img').forEach(i=>i.onerror=()=>i.remove());
   go(cur);
 }
 addEventListener('hashchange',()=>go(location.hash.slice(1)));
@@ -331,7 +332,7 @@ aside{width:320px;display:flex;flex-direction:column;gap:16px}
   </div>
   <aside>
     <div class="box"><h3>Today</h3><div class="cnt"><div><b id="cp">0</b>Present</div><div><b id="cl">0</b>Late</div><div><b id="ci">0</b>Inside</div></div></div>
-    <div class="box"><h3>Test without the reader</h3><input id="tu" placeholder="Type a card UID" style="width:100%;padding:8px;border-radius:6px;border:0;margin-bottom:8px"><button onclick="testScan()" style="width:100%;padding:8px;border:0;border-radius:6px;background:#2f6fdb;color:#fff;font-weight:600;cursor:pointer">Scan</button></div>
+    <div class="box"><h3>Test without the reader</h3><input id="tu" placeholder="Type a card UID" style="width:100%;padding:8px;border-radius:6px;border:0;margin-bottom:8px"><button onclick="testScan()" style="width:100%;padding:8px;border:0;border-radius:6px;background:#2f6fdb;color:#fff;font-weight:600;cursor:pointer">Scan</button><div id="tr" style="margin-top:8px;font-size:13px;color:#cfe3f5"></div></div>
     <div class="box" style="flex:1;overflow:hidden"><h3>Recent scans</h3><div id="recent"></div></div>
   </aside>
 </div>
@@ -344,7 +345,7 @@ function begin(){if(voice)return;voice=true;$('#start')?.remove();speak('Voice i
 addEventListener('click',begin);addEventListener('keydown',begin);
 function speak(t){if(!voice||!window.speechSynthesis)return;speechSynthesis.cancel();setTimeout(()=>{const u=new SpeechSynthesisUtterance(t);u.rate=.95;speechSynthesis.speak(u)},150)}
 if(window.speechSynthesis)speechSynthesis.getVoices();
-async function testScan(){const u=$('#tu').value.trim();if(u)await fetch('/api/scan',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({uid:u})})}
+async function testScan(){const u=$('#tu').value.trim();if(!u)return;$('#tr').textContent='Sending…';try{const r=await fetch('/api/scan',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({uid:u})});const j=await r.json().catch(()=>({message:'HTTP '+r.status}));$('#tr').textContent='Server says: '+(j.message||j.status)}catch(e){$('#tr').textContent='Cannot reach the server'}}
 setInterval(()=>{const d=new Date();$('#clock').innerHTML=d.toLocaleTimeString('en-US',{timeZone:'Asia/Manila',hour:'2-digit',minute:'2-digit',second:'2-digit'})+'<small>'+d.toLocaleDateString('en-US',{timeZone:'Asia/Manila',weekday:'long',month:'long',day:'numeric'})+'</small>'},1000);
 
 function show(s){
@@ -372,7 +373,7 @@ async function poll(){
 }
 async function stats(){try{const s=await (await fetch('/api/stats')).json();$('#cp').textContent=s.present;$('#cl').textContent=s.late;$('#ci').textContent=s.inside}catch(e){}}
 async function boot(){
-  try{const c=await (await fetch('/api/config')).json();$('#school').textContent=c.school.name;if(c.logoPath){$('#logo').src=c.logoPath;$('#logo').hidden=false}anns=await (await fetch('/api/announcements')).json()}catch(e){}
+  try{const c=await (await fetch('/api/config')).json();$('#school').textContent=c.school.name;if(c.logoPath){const l=$('#logo');l.onerror=()=>l.remove();l.src=c.logoPath;l.hidden=false}anns=await (await fetch('/api/announcements')).json()}catch(e){}
   stats();setInterval(stats,15000);setInterval(poll,800);
   setInterval(()=>{if(anns.length){const a=anns[ai++%anns.length];$('#ann').textContent='📢 '+a.title+': '+a.message}},6000);
 }
@@ -406,11 +407,13 @@ app.use(bodyParser.urlencoded({ extended: true }));
 app.use('/uploads', express.static(uploadsDir));
 app.get('/assets/style.css', (req, res) => res.type('css').send(CSS));
 
-const sessions = new Set();
+const SECRET = process.env.SECRET || sha(MONGO_URI);
+const sign = v => v + '.' + crypto.createHmac('sha256', SECRET).update(v).digest('hex');
+const valid = t => { const [e, h] = String(t || '').split('.'); return !!h && sign(e) === t && +e > Date.now(); };
 const cookie = req => Object.fromEntries((req.headers.cookie || '').split(';').map(c => c.trim().split('=')));
 const open = ['/login', '/api/scan', '/api/ping', '/student-register', '/api/register-student'];
 app.use((req, res, next) => {
-  if (open.includes(req.path) || req.path.startsWith('/uploads') || req.path.startsWith('/assets') || sessions.has(cookie(req).sid)) return next();
+  if (open.includes(req.path) || req.path.startsWith('/uploads') || req.path.startsWith('/assets') || valid(cookie(req).sid)) return next();
   req.path.startsWith('/api') ? res.status(401).json({ error: 'Login required' }) : res.redirect('/login');
 });
 
@@ -426,8 +429,7 @@ app.get('/login', async (req, res) => {
 app.post('/login', async (req, res) => {
   const c = await getConfig();
   if (req.body.username === c.adminUser && sha(req.body.password) === c.adminPass) {
-    const sid = crypto.randomBytes(24).toString('hex');
-    sessions.add(sid);
+    const sid = sign(String(Date.now() + 864e5));
     res.setHeader('Set-Cookie', `sid=${sid}; HttpOnly; Path=/; Max-Age=86400`);
     log('Logged in');
     return res.redirect('/');
@@ -435,7 +437,6 @@ app.post('/login', async (req, res) => {
   res.redirect('/login?e=1');
 });
 app.get('/logout', (req, res) => {
-  sessions.delete(cookie(req).sid);
   res.setHeader('Set-Cookie', 'sid=; Path=/; Max-Age=0');
   res.redirect('/login');
 });
@@ -469,7 +470,6 @@ function sendSMSNotification(config, phoneNumber, studentName, label, status, ti
 }
 
 // API: ESP8266 SCANNER ENDPOINT (AM in/out + PM in/out)
-let lastScan = { id: 0 };
 const SLOTS = { am: ['amIn', 'amOut'], pm: ['pmIn', 'pmOut'] };
 
 app.get('/api/scan', (req, res) => res.send('Scan endpoint is online. The ESP8266 must POST uid to this address.'));
@@ -486,8 +486,9 @@ app.post('/api/scan', async (req, res) => {
     await config.save();
 
     const now = new Date(), date = ymd(now), time = hm(now);
-    const show = o => { lastScan = { id: lastScan.id + 1, ts: Date.now(), time, uid: cleanUid, ...o }; };
-    if (lastScan.uid === cleanUid && Date.now() - lastScan.ts < 4000) return res.json({ status: 'duplicate', message: 'Already scanned' });
+    const show = o => Config.updateOne({}, { lastScan: { id: Date.now(), ts: Date.now(), time, uid: cleanUid, ...o } });
+    const prev = config.lastScan || {};
+    if (prev.uid === cleanUid && Date.now() - prev.ts < 4000) return res.json({ status: 'duplicate', message: 'Already scanned' });
 
     const compact = cleanUid.replace(/[\s:-]/g, '');
     const student = await Student.findOne({ uid: { $in: [cleanUid, compact] } }).select('-photoData');
@@ -495,7 +496,7 @@ app.post('/api/scan', async (req, res) => {
       const reason = student ? `Card ${student.cardStatus}` : 'Card not registered';
       await Unauthorized.findOneAndUpdate({ uid: cleanUid }, { $inc: { count: 1 }, reason, lastSeen: now }, { upsert: true });
       notify(`${reason}: ${cleanUid}`, 'warning');
-      show({ ok: false, message: reason });
+      await show({ ok: false, message: reason });
       return res.json({ status: student ? 'blocked' : 'unknown', message: reason });
     }
 
@@ -505,7 +506,7 @@ app.post('/api/scan', async (req, res) => {
     const period = time >= sc.noon ? 'pm' : 'am';
     const slot = SLOTS[period].find(k => !rec[k]);
     if (!slot) {
-      show({ ...info, type: 'DONE', period: period.toUpperCase(), status: 'Already completed' });
+      await show({ ...info, type: 'DONE', period: period.toUpperCase(), status: 'Already completed' });
       return res.json({ status: 'duplicate', message: `${student.name} already completed ${period.toUpperCase()} scans` });
     }
 
@@ -515,7 +516,7 @@ app.post('/api/scan', async (req, res) => {
     if (slot === 'amIn' && time > sc.late) { rec.late = true; status = 'LATE'; }
     if (slot === 'pmOut' && time < sc.dismissal) { rec.earlyOut = true; status = 'EARLY OUT'; }
     await rec.save();
-    show({ ...info, type, period: period.toUpperCase(), status });
+    await show({ ...info, type, period: period.toUpperCase(), status });
     try {
       await ScanLog.create({ date, time, studentId: student.studentId, name: student.name, uid: cleanUid, action: type, period: period.toUpperCase(), status });
       if (status === 'LATE' || status === 'EARLY OUT') notify(`${student.name} (${student.yearLevel}-${student.section}) ${status} at ${time}`, 'warning');
@@ -527,12 +528,12 @@ app.post('/api/scan', async (req, res) => {
     res.json({ status: 'success', scanType: type, isLate: status === 'LATE', message: `${type} recorded for ${student.name}` });
   } catch (err) {
     console.error('[SCAN ERROR]', err);
-    lastScan = { id: lastScan.id + 1, ts: Date.now(), time: hm(new Date()), uid: req.body.uid || '', ok: false, message: 'Server error: ' + err.message };
+    await Config.updateOne({}, { lastScan: { id: Date.now(), ts: Date.now(), time: hm(new Date()), uid: req.body.uid || '', ok: false, message: 'Server error: ' + err.message } }).catch(() => {});
     res.status(500).json({ status: 'error', message: 'Server Error: ' + err.message });
   }
 });
 
-app.get('/api/last-scan', (req, res) => res.json(lastScan));
+app.get('/api/last-scan', async (req, res) => res.json((await getConfig()).lastScan || { id: 0 }));
 app.get('/api/esp', async (req, res) => {
   const c = await getConfig();
   res.json({ connected: !!c.lastPing && Date.now() - c.lastPing < 60000, lastPing: c.lastPing, latestUid: c.latestUid });
