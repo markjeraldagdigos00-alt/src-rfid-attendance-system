@@ -90,7 +90,10 @@ body{margin:0;font-family:Figtree,'Segoe UI',sans-serif;background:var(--bg);col
 nav{width:255px;flex-shrink:0;background:var(--ink);color:#cfd8e3;padding:14px 10px;position:sticky;top:0;height:100vh;overflow-y:auto}
 nav .brand{display:flex;align-items:center;gap:10px;padding:6px 10px 16px;color:#fff;font-weight:700;line-height:1.2}
 nav .brand img{height:42px;border-radius:6px}
-nav a{display:block;padding:8px 12px;border-radius:6px;color:inherit;text-decoration:none;font-size:14px}
+nav .brand .ic{width:32px;height:32px}
+.ic{width:18px;height:18px;flex-shrink:0;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+h3 .ic{vertical-align:-3px;margin-right:6px}
+nav a{display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:6px;color:inherit;text-decoration:none;font-size:14px}
 nav a:hover{background:#1d3a55}nav a.on{background:var(--green);color:#fff;font-weight:600}
 main{flex:1;min-width:0;padding:26px 30px}
 h2{margin:0 0 4px;font-size:26px;color:var(--ink)}.sub{color:var(--mut);margin:0 0 18px}
@@ -149,6 +152,8 @@ const INDEX_HTML = `<!DOCTYPE html>
   </div><p style="margin:14px 0 0"><button>Save student</button> <button type="button" class="alt" onclick="lastUid()">Use last scanned card</button> <button type="button" class="danger" onclick="dlg.close()">Cancel</button></p>
 </form></dialog>
 <script>
+const IC={dashboard:'<path d="M3 11l9-8 9 8M5 10v10h14V10M10 20v-6h4v6"/>',scanner:'<path d="M5 12a7 7 0 0 1 14 0M8.5 12a3.5 3.5 0 0 1 7 0"/><circle cx="12" cy="12" r="1"/><path d="M12 13v7M9 20h6"/>',students:'<circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/>',cards:'<rect x="3" y="6" width="18" height="12" rx="2"/><path d="M3 10h18M6.5 15h4"/>',grades:'<path d="M3 21h18M5 21V9l7-5 7 5v12M10 21v-6h4v6"/>',sections:'<path d="M4 5h12a3 3 0 0 1 3 3v12H7a3 3 0 0 1-3-3zM4 17a3 3 0 0 1 3-3h12"/>',teachers:'<circle cx="9" cy="8" r="3.5"/><path d="M2 20c0-3.5 3-5.5 7-5.5s7 2 7 5.5"/><circle cx="17" cy="9" r="2.5"/><path d="M17 14c3 0 5 1.5 5 4"/>',daily:'<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/>',timeinout:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',late:'<path d="M12 3l10 18H2zM12 10v5M12 18v.5"/>',absent:'<circle cx="12" cy="12" r="9"/><path d="M9 9l6 6M15 9l-6 6"/>',early:'<path d="M20 4v16M15 12H4M8 8l-4 4 4 4"/>',reports:'<path d="M5 20V10M12 20V4M19 20v-7"/>',analytics:'<path d="M3 17l6-6 4 4 8-8M15 7h6v6"/>',search:'<circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/>',unauthorized:'<path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6zM12 8v5M12 16v.5"/>',esp:'<rect x="7" y="7" width="10" height="10" rx="2"/><path d="M9 3v4M15 3v4M9 17v4M15 17v4M3 9h4M3 15h4M17 9h4M17 15h4"/>',notifications:'<path d="M6 16v-5a6 6 0 0 1 12 0v5l2 2H4zM10 21h4"/>',announcements:'<path d="M3 10v4h4l7 4V6L7 10zM18 9a4 4 0 0 1 0 6"/>',excuses:'<rect x="6" y="4" width="12" height="17" rx="2"/><path d="M9 4h6v3H9zM9 12h6M9 16h6"/>',export:'<path d="M12 15V3M7 8l5-5 5 5M4 15v5h16v-5"/>',schedule:'<path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/>',school:'<rect x="4" y="4" width="16" height="17" rx="2"/><path d="M9 8h2M13 8h2M9 12h2M13 12h2M10 21v-4h4v4"/>',admin:'<circle cx="12" cy="9" r="3.5"/><path d="M5 20c1-4 4-5.5 7-5.5s6 1.5 7 5.5"/>',logs:'<path d="M6 3h9l4 4v14H6zM14 3v5h5M9 13h7M9 17h7"/>',backup:'<ellipse cx="12" cy="6" rx="8" ry="3"/><path d="M4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/>',logout:'<path d="M9 21H4V3h5M16 17l5-5-5-5M21 12H9"/>'};
+const ic=k=>'<svg class="ic" viewBox="0 0 24 24" aria-hidden="true">'+(IC[k]||'')+'</svg>';
 const MENU=[['dashboard','Dashboard'],['scanner','RFID Scanner','/scanner'],['students','Students'],['cards','RFID Cards'],['grades','Grade Levels'],['sections','Sections'],['teachers','Teachers'],['daily','Daily Attendance'],['timeinout','Time In / Time Out'],['late','Late Students'],['absent','Absent Students'],['early','Early Out'],['reports','Attendance Reports'],['analytics','Attendance Analytics'],['search','Search Records'],['unauthorized','Unauthorized RFID'],['esp','ESP8266 Status'],['notifications','Notifications'],['announcements','Announcements'],['excuses','Excuse/Absence Records'],['export','Export Reports'],['schedule','Attendance Schedule'],['school','School Information'],['admin','Admin Account'],['logs','Activity Logs'],['backup','Backup & Restore'],['logout','Logout','/logout']];
 const $=s=>document.querySelector(s),dlg=$('#dlg');
 const api=async(u,o)=>{const r=await fetch(u,o);if(r.status===401)location='/login';const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||'Request failed');return j};
@@ -174,7 +179,7 @@ V.dashboard=async()=>{
   const [s,ann]=await Promise.all([api('/api/stats'),api('/api/announcements')]);
   const c=(n,l,k='')=>\`<div class="stat \${k}"><b>\${n}</b><span>\${l}</span></div>\`;
   return h('Dashboard','Today at school')+\`<div class="stats">\${c(s.total,'Total students')}\${c(s.present,'Present','g')}\${c(s.absent,'Absent','r')}\${c(s.late,'Late','a')}\${c(s.inside,'Inside the school','g')}\${c(s.early,'Early out','a')}</div>\`
-   +\`<h3>Latest arrivals</h3>\`+(await attTable({})).split('</tr>').slice(0,9).join('</tr>')+(ann.length?\`</tbody></table></div><div class="card" style="margin-top:18px"><h3>\${esc(ann[0].title)}</h3><p>\${esc(ann[0].message)}</p></div>\`:'</tbody></table></div>');
+   +\`<h3>Latest arrivals</h3>\`+(await attTable({})).split('</tr>').slice(0,9).join('</tr>')+(ann.length?\`</tbody></table></div><div class="card" style="margin-top:18px"><h3>\${ic('announcements')}\${esc(ann[0].title)}</h3><p>\${esc(ann[0].message)}</p></div>\`:'</tbody></table></div>');
 };
 V.daily=attView('Daily Attendance','Everyone who scanned today');
 V.late=attView('Late Students','Arrived after the late time');
@@ -275,7 +280,7 @@ async function go(k){
 }
 async function init(){
   GR=await api('/api/grades');const c=await api('/api/config');
-  $('#nav').innerHTML=\`<div class="brand">\${c.logoPath?\`<img src="\${c.logoPath}">\`:''}<span>\${esc(c.school.name)}</span></div>\`+MENU.map(m=>\`<a data-k="\${m[0]}" href="\${m[2]||'#'+m[0]}" \${m[0]==='scanner'?'target="_blank"':''}>\${m[1]}</a>\`).join('');
+  $('#nav').innerHTML=\`<div class="brand">\${c.logoPath?\`<img src="\${c.logoPath}">\`:ic('grades')}<span>\${esc(c.school.name)}</span></div>\`+MENU.map(m=>\`<a data-k="\${m[0]}" href="\${m[2]||'#'+m[0]}" \${m[0]==='scanner'?'target="_blank"':''}>\${ic(m[0])}<span>\${m[1]}</span></a>\`).join('');
   document.querySelectorAll('nav img').forEach(i=>i.onerror=()=>i.remove());
   go(cur);
 }
@@ -319,11 +324,13 @@ aside{width:320px;display:flex;flex-direction:column;gap:16px}
 #start{position:fixed;right:16px;bottom:64px;z-index:9;display:flex;align-items:center;gap:10px;background:#12263a;border:2px solid #1f8a5b;padding:10px 16px;border-radius:12px;font-size:16px}
 #start button{font:inherit;font-weight:800;padding:8px 18px;border:0;border-radius:8px;background:#1f8a5b;color:#fff;cursor:pointer}
 #net{position:fixed;left:16px;bottom:64px;font-size:13px;color:#9fb3c8}
+.ic{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;vertical-align:-4px}
+.dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:7px;background:#6b7a8c}.dot.on{background:#3ddc84}
 @media(max-width:900px){aside{display:none}#card{flex-direction:column;gap:20px}#photo{width:50vw}}
 </style>
 </head>
 <body>
-<div id="start">Voice is off <button onclick="begin()">Turn on voice</button></div><div id="net">Connecting…</div>
+<div id="start"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9zM16.5 9a4 4 0 0 1 0 6"/></svg> Voice is off <button onclick="begin()">Turn on voice</button></div><div id="net">Connecting…</div>
 <header><img id="logo" hidden><h1 id="school">School Attendance</h1><div id="clock"></div></header>
 <div class="wrap">
   <div id="stage">
@@ -368,14 +375,14 @@ function show(s){
 }
 async function poll(){
   try{const s=await (await fetch('/api/last-scan')).json();if(s.status===401||s.error)return location='/login';
-    $('#net').textContent='Connected · last card received: '+(s.uid||'none yet');
-    if(seen===null)seen=s.id;else if(s.id!==seen){seen=s.id;show(s)}}catch(e){$('#net').textContent='Cannot reach the server'}
+    $('#net').innerHTML='<i class="dot on"></i>Connected · last card received: '+esc(s.uid||'none yet');
+    if(seen===null)seen=s.id;else if(s.id!==seen){seen=s.id;show(s)}}catch(e){$('#net').innerHTML='<i class="dot"></i>Cannot reach the server'}
 }
 async function stats(){try{const s=await (await fetch('/api/stats')).json();$('#cp').textContent=s.present;$('#cl').textContent=s.late;$('#ci').textContent=s.inside}catch(e){}}
 async function boot(){
   try{const c=await (await fetch('/api/config')).json();$('#school').textContent=c.school.name;if(c.logoPath){const l=$('#logo');l.onerror=()=>l.remove();l.src=c.logoPath;l.hidden=false}anns=await (await fetch('/api/announcements')).json()}catch(e){}
   stats();setInterval(stats,15000);setInterval(poll,800);
-  setInterval(()=>{if(anns.length){const a=anns[ai++%anns.length];$('#ann').textContent=a.title+': '+a.message}},6000);
+  setInterval(()=>{if(anns.length){const a=anns[ai++%anns.length];$('#ann').innerHTML='<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10v4h4l7 4V6L7 10zM18 9a4 4 0 0 1 0 6"/></svg> '+esc(a.title)+': '+esc(a.message)}},6000);
 }
 boot();
 </script>
