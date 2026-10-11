@@ -149,7 +149,7 @@ const INDEX_HTML = `<!DOCTYPE html>
   </div><p style="margin:14px 0 0"><button>Save student</button> <button type="button" class="alt" onclick="lastUid()">Use last scanned card</button> <button type="button" class="danger" onclick="dlg.close()">Cancel</button></p>
 </form></dialog>
 <script>
-const MENU=[['dashboard','🏠','Dashboard'],['scanner','📡','RFID Scanner','/scanner'],['students','👨‍🎓','Students'],['cards','💳','RFID Cards'],['grades','🏫','Grade Levels'],['sections','📚','Sections'],['teachers','👨‍🏫','Teachers'],['daily','📅','Daily Attendance'],['timeinout','🕐','Time In / Time Out'],['late','⚠️','Late Students'],['absent','❌','Absent Students'],['early','🚪','Early Out'],['reports','📊','Attendance Reports'],['analytics','📈','Attendance Analytics'],['search','🔍','Search Records'],['unauthorized','🚨','Unauthorized RFID'],['esp','📡','ESP8266 Status'],['notifications','🔔','Notifications'],['announcements','📢','Announcements'],['excuses','📋','Excuse/Absence Records'],['export','📤','Export Reports'],['schedule','⚙️','Attendance Schedule'],['school','🏫','School Information'],['admin','👤','Admin Account'],['logs','📝','Activity Logs'],['backup','💾','Backup & Restore'],['logout','🚪','Logout','/logout']];
+const MENU=[['dashboard','Dashboard'],['scanner','RFID Scanner','/scanner'],['students','Students'],['cards','RFID Cards'],['grades','Grade Levels'],['sections','Sections'],['teachers','Teachers'],['daily','Daily Attendance'],['timeinout','Time In / Time Out'],['late','Late Students'],['absent','Absent Students'],['early','Early Out'],['reports','Attendance Reports'],['analytics','Attendance Analytics'],['search','Search Records'],['unauthorized','Unauthorized RFID'],['esp','ESP8266 Status'],['notifications','Notifications'],['announcements','Announcements'],['excuses','Excuse/Absence Records'],['export','Export Reports'],['schedule','Attendance Schedule'],['school','School Information'],['admin','Admin Account'],['logs','Activity Logs'],['backup','Backup & Restore'],['logout','Logout','/logout']];
 const $=s=>document.querySelector(s),dlg=$('#dlg');
 const api=async(u,o)=>{const r=await fetch(u,o);if(r.status===401)location='/login';const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||'Request failed');return j};
 const post=(u,b)=>api(u,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)});
@@ -174,7 +174,7 @@ V.dashboard=async()=>{
   const [s,ann]=await Promise.all([api('/api/stats'),api('/api/announcements')]);
   const c=(n,l,k='')=>\`<div class="stat \${k}"><b>\${n}</b><span>\${l}</span></div>\`;
   return h('Dashboard','Today at school')+\`<div class="stats">\${c(s.total,'Total students')}\${c(s.present,'Present','g')}\${c(s.absent,'Absent','r')}\${c(s.late,'Late','a')}\${c(s.inside,'Inside the school','g')}\${c(s.early,'Early out','a')}</div>\`
-   +\`<h3>Latest arrivals</h3>\`+(await attTable({})).split('</tr>').slice(0,9).join('</tr>')+(ann.length?\`</tbody></table></div><div class="card" style="margin-top:18px"><h3>📢 \${esc(ann[0].title)}</h3><p>\${esc(ann[0].message)}</p></div>\`:'</tbody></table></div>');
+   +\`<h3>Latest arrivals</h3>\`+(await attTable({})).split('</tr>').slice(0,9).join('</tr>')+(ann.length?\`</tbody></table></div><div class="card" style="margin-top:18px"><h3>\${esc(ann[0].title)}</h3><p>\${esc(ann[0].message)}</p></div>\`:'</tbody></table></div>');
 };
 V.daily=attView('Daily Attendance','Everyone who scanned today');
 V.late=attView('Late Students','Arrived after the late time');
@@ -275,7 +275,7 @@ async function go(k){
 }
 async function init(){
   GR=await api('/api/grades');const c=await api('/api/config');
-  $('#nav').innerHTML=\`<div class="brand">\${c.logoPath?\`<img src="\${c.logoPath}">\`:'🎓'}<span>\${esc(c.school.name)}</span></div>\`+MENU.map(m=>\`<a data-k="\${m[0]}" href="\${m[3]||'#'+m[0]}" \${m[0]==='scanner'?'target="_blank"':''}>\${m[1]} \${m[2]}</a>\`).join('');
+  $('#nav').innerHTML=\`<div class="brand">\${c.logoPath?\`<img src="\${c.logoPath}">\`:''}<span>\${esc(c.school.name)}</span></div>\`+MENU.map(m=>\`<a data-k="\${m[0]}" href="\${m[2]||'#'+m[0]}" \${m[0]==='scanner'?'target="_blank"':''}>\${m[1]}</a>\`).join('');
   document.querySelectorAll('nav img').forEach(i=>i.onerror=()=>i.remove());
   go(cur);
 }
@@ -323,7 +323,7 @@ aside{width:320px;display:flex;flex-direction:column;gap:16px}
 </style>
 </head>
 <body>
-<div id="start">🔊 Voice is off <button onclick="begin()">Turn on voice</button></div><div id="net">Connecting…</div>
+<div id="start">Voice is off <button onclick="begin()">Turn on voice</button></div><div id="net">Connecting…</div>
 <header><img id="logo" hidden><h1 id="school">School Attendance</h1><div id="clock"></div></header>
 <div class="wrap">
   <div id="stage">
@@ -354,7 +354,7 @@ function show(s){
   stage.className=!s.ok?'bad':late?'late':'ok';
   $('#idle').style.display='none';$('#card').style.display='flex';
   const p=$('#photo');
-  if(s.photo){p.style.backgroundImage='url('+s.photo+')';p.style.backgroundSize='cover';p.textContent=''}else{p.style.backgroundImage='';p.textContent=s.ok?(s.name||'?')[0]:'🚫'}
+  if(s.photo){p.style.backgroundImage='url('+s.photo+')';p.style.backgroundSize='cover';p.textContent=''}else{p.style.backgroundImage='';p.textContent=s.ok?(s.name||'?')[0]:'X'}
   $('#name').textContent=s.ok?s.name:s.message;
   $('#grade').textContent=s.ok?s.yearLevel+' - '+s.section:'Card: '+s.uid;
   $('#id').textContent=s.ok?'ID '+s.studentId:'Please see the office';
@@ -368,14 +368,14 @@ function show(s){
 }
 async function poll(){
   try{const s=await (await fetch('/api/last-scan')).json();if(s.status===401||s.error)return location='/login';
-    $('#net').textContent='● Connected · last card received: '+(s.uid||'none yet');
-    if(seen===null)seen=s.id;else if(s.id!==seen){seen=s.id;show(s)}}catch(e){$('#net').textContent='○ Cannot reach the server'}
+    $('#net').textContent='Connected · last card received: '+(s.uid||'none yet');
+    if(seen===null)seen=s.id;else if(s.id!==seen){seen=s.id;show(s)}}catch(e){$('#net').textContent='Cannot reach the server'}
 }
 async function stats(){try{const s=await (await fetch('/api/stats')).json();$('#cp').textContent=s.present;$('#cl').textContent=s.late;$('#ci').textContent=s.inside}catch(e){}}
 async function boot(){
   try{const c=await (await fetch('/api/config')).json();$('#school').textContent=c.school.name;if(c.logoPath){const l=$('#logo');l.onerror=()=>l.remove();l.src=c.logoPath;l.hidden=false}anns=await (await fetch('/api/announcements')).json()}catch(e){}
   stats();setInterval(stats,15000);setInterval(poll,800);
-  setInterval(()=>{if(anns.length){const a=anns[ai++%anns.length];$('#ann').textContent='📢 '+a.title+': '+a.message}},6000);
+  setInterval(()=>{if(anns.length){const a=anns[ai++%anns.length];$('#ann').textContent=a.title+': '+a.message}},6000);
 }
 boot();
 </script>
